@@ -32,6 +32,51 @@ Or install it yourself as:
 Inside of your Ruby program, require FiberConnectionPool with:
 
     require 'fiber_connection_pool'
+    
+How It Works
+-------------------
+
+```  ruby
+pool = FiberConnectionPool.new(:size => 5){ MyFancyDBConnection.new }
+```
+
+It just keeps an array holding the result of running 
+the given block _size_ times.
+
+Later, inside the reactor loop (either EventMachine's or Celluloid's),
+each request is wrapped on a Fiber, and then `pool` plays its magic.
+
+When a method is called on `pool` and it's not one of its own methods,
+then it reserves one connection from the internal pool, 
+and associates it _with the current Fiber_.
+
+Then it calls the method on that connection instance.
+
+When the method returns, the reserved instance is released again, and 
+the return value is sent back to the caller. Just as if it were called
+directly on the connection.
+
+``` ruby
+results = pool.query_me(sql)
+```
+
+(...)
+
+Methods from `MyFancyDBConnection` instance should yield the fiber before 
+perform any blocking IO. That returns control to te underlying reactor, 
+that spawns another fiber to process the next request, while the previous 
+one is still waiting for the IO response.
+
+(...)
+
+Not thread-safe
+
+(...)
+
+Reaction to failure
+recreate_connection
+
+(...)
 
 Supported Platforms
 -------------------
