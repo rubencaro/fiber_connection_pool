@@ -15,7 +15,10 @@ class BlockingConnection
 end
 
 class EMSynchronyConnection < BlockingConnection
-  def do_something
+  def do_something(info)
+    info[:threads] << Thread.current.object_id
+    info[:fibers] << Fiber.current.object_id
+    info[:instances] << self.object_id
     EM::Synchrony.sleep @delay
   end
 end

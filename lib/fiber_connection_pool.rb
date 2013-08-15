@@ -1,7 +1,7 @@
 require 'fiber'
 
 class FiberConnectionPool
-  VERSION = '0.2.0'
+  VERSION = '0.1.1'
 
   attr_accessor :saved_data
 
@@ -19,7 +19,7 @@ class FiberConnectionPool
     @available = []   # pool of free connections
     @pending   = []   # pending reservations (FIFO)
 
-    @available = Array.new(opts[:size]) { yield }
+    @available = Array.new(opts[:size].to_i) { yield }
   end
 
   def save_data_for_fiber
@@ -46,11 +46,15 @@ class FiberConnectionPool
     end
   end
 
+  ##
+  # avoid method_missing for most common methods
+  #
   def query(sql)
     execute(false,'query') do |conn|
       conn.query sql
     end
   end
+
 
   def recreate_connection(new_conn)
     bad_conn = @reserved_backup[Fiber.current.object_id]
