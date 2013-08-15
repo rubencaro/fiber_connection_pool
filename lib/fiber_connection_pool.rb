@@ -1,18 +1,23 @@
 class FiberConnectionPool
-  VERSION = '0.1.0'
+  VERSION = '0.2.0'
 
   attr_accessor :saved_data
 
-  def initialize(opts, &block)
+  # Initializes the pool with 'size' instances
+  # running the given block to get each one. Ex:
+  #
+  #   pool = FiberConnectionPool.new :size => 5
+  #
+  def initialize(opts)
+    raise ArgumentError.new('size > 0 is mandatory') if opts[:size].to_i <= 0
+
     @saved_data = {} # placeholder for requested save data
     @reserved  = {}   # map of in-progress connections
     @reserved_backup = {}   # backup map of in-progress connections, to catch failures
     @available = []   # pool of free connections
     @pending   = []   # pending reservations (FIFO)
 
-    opts[:size].times do
-      @available.push(block.call) if block_given?
-    end
+    @available = Array.new(opts[:size]) { yield }
   end
 
   def save_data_for_fiber

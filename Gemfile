@@ -1,3 +1,8 @@
 source "https://rubygems.org"
 
-gemspec(development_group: :runtime)
+gemspec
+
+group :development, :test do
+  gem 'pry'
+  gem 'pry-doc'
+end
