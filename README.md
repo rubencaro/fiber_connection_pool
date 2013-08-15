@@ -1,6 +1,8 @@
 fiber_connection_pool
 =====================
 
+[![Build Status](https://secure.travis-ci.org/rubencaro/fiber_connection_pool.png?branch=master)](http://travis-ci.org/rubencaro/fiber_connection_pool)
+
 Fiber-based generic connection pool
 
 Widely based on `ConnectionPool`

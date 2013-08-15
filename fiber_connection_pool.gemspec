@@ -8,13 +8,19 @@ Gem::Specification.new do |s|
   s.authors     = ["Ruben Caro", "Oriol Francès"]
   s.email       = ["ruben@lanuez.org"]
   s.homepage    = "https://github.com/rubencaro/fiber_connection_pool"
-  s.description = s.summary = %q{Fiber-based generic connection pool for Ruby}
+  s.summary = "Fiber-based generic connection pool for Ruby"
+  s.description = "Fiber-based generic connection pool for Ruby, allowing
+                  non-blocking IO behaviour on the same thread
+                  as provided by EventMachine or Celluloid."
 
   s.files         = `git ls-files`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
   s.executables   = `git ls-files -- bin/*`.split("\n").map{ |f| File.basename(f) }
   s.require_paths = ["lib"]
   s.license = "GPLv3"
+
+  s.required_ruby_version     = '>= 1.9.2'
+
   s.add_development_dependency 'minitest'
   s.add_development_dependency 'rake'
 end
