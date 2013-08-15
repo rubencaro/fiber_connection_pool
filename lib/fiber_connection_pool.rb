@@ -1,3 +1,5 @@
+require 'fiber'
+
 class FiberConnectionPool
   VERSION = '0.2.0'
 
@@ -6,7 +8,7 @@ class FiberConnectionPool
   # Initializes the pool with 'size' instances
   # running the given block to get each one. Ex:
   #
-  #   pool = FiberConnectionPool.new :size => 5
+  #   pool = FiberConnectionPool.new(:size => 5) { MyConnection.new }
   #
   def initialize(opts)
     raise ArgumentError.new('size > 0 is mandatory') if opts[:size].to_i <= 0
