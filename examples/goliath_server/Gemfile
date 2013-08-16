@@ -1,0 +1,5 @@
+source 'https://rubygems.org'
+gem 'goliath'
+gem 'em-synchrony'
+gem 'mysql2'
+gem 'fiber_connection_pool'
