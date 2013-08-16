@@ -40,36 +40,44 @@ How It Works
 pool = FiberConnectionPool.new(:size => 5){ MyFancyDBConnection.new }
 ```
 
-It just keeps an array holding the result of running 
-the given block _size_ times.
-
-Later, inside the reactor loop (either EventMachine's or Celluloid's),
+It just keeps an array (the internal pool) holding the result of running 
+the given block _size_ times. Later, inside the reactor loop (either EventMachine's or Celluloid's),
 each request is wrapped on a Fiber, and then `pool` plays its magic.
 
 When a method is called on `pool` and it's not one of its own methods,
-then it reserves one connection from the internal pool, 
-and associates it _with the current Fiber_.
+then it:
 
-Then it calls the method on that connection instance.
-
-When the method returns, the reserved instance is released again, and 
-the return value is sent back to the caller. Just as if it were called
-directly on the connection.
-
-``` ruby
-results = pool.query_me(sql)
-```
-
-(...)
+1. reserves one connection from the internal pool and associates it __with the current Fiber__
+2. if no connection is available, then that Fiber stays on a _pending_ queue, and __is yielded__
+3. calls the method on that `MyFancyDBConnection` instance
+4. when the method returns, the reserved instance is released again, 
+and the next Fiber on the _pending_ queue __is resumed__
+5. the return value is sent back to the caller
 
 Methods from `MyFancyDBConnection` instance should yield the fiber before 
 perform any blocking IO. That returns control to te underlying reactor, 
 that spawns another fiber to process the next request, while the previous 
-one is still waiting for the IO response.
+one is still waiting for the IO response. That new fiber will get its own 
+connection from the pool, or else it will yield until there 
+is one available.
 
-(...)
+The whole process looks synchronous from the Fiber perspective, _because it is_.
+The Fiber will really block ( _yield_ ) until it gets the result. 
+
+``` ruby
+results = pool.query_me(sql)
+puts "I waited for this: #{results}"
+```
+
+The magic resides on the fact that other fibers are being processed while this one is waiting.
 
 Not thread-safe
+------------------
+
+`FiberConnectionPool` is not thread-safe right now. You will not be able to use it
+from different threads, as eventually it will try to resume a Fiber that resides 
+on a different Thread. That will raise a FiberError( _"calling a fiber across threads"_ ). 
+Maybe we one day we add that feature too.
 
 (...)
 
