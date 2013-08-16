@@ -114,7 +114,6 @@ Tested against Ruby 1.9.3, 2.0.0, and rbx-19mode ([See details..](http://travis-
 TODOS
 -------------------
 
-* Goliath example
 * no MySQL-specific code
 * better testing
 * improve reaction to failure
