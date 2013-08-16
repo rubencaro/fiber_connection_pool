@@ -1,7 +1,7 @@
 require 'fiber'
 
 class FiberConnectionPool
-  VERSION = '0.1.2'
+  VERSION = '0.1.3'
 
   attr_accessor :saved_data
 
@@ -67,7 +67,7 @@ class FiberConnectionPool
       if !@saved_data[Fiber.current.object_id].nil?
         @saved_data[Fiber.current.object_id]['affected_rows'] = conn.affected_rows
       end
-      release_backup(f) if !async and method == 'query'
+      release_backup(f) if !async
       retval
     ensure
       release(f) if not async
