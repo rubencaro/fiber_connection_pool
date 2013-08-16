@@ -38,7 +38,10 @@ class FiberConnectionPool
 
     begin
       conn = acquire(f)
-      retval = yield conn
+      retval = yield conn      
+      if !@saved_data[Fiber.current.object_id].nil?
+        @saved_data[Fiber.current.object_id]['affected_rows'] = conn.affected_rows
+      end
       release_backup(f) if !async and method == 'query'
       retval
     ensure
