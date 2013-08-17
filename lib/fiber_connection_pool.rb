@@ -39,9 +39,17 @@ class FiberConnectionPool
     end
   end
 
+  def has_connection?(conn)
+    (@available + @reserved.values).include?(conn)
+  end
 
   def recreate_connection(new_conn)
+    with_failed_connection { new_conn }
+  end
+
+  def with_failed_connection
     bad_conn = @reserved_backup[Fiber.current.object_id]
+    new_conn = yield bad_conn
     release_backup Fiber.current
     @available.reject!{ |v| v == bad_conn }
     @reserved.reject!{ |k,v| v == bad_conn }

@@ -29,7 +29,7 @@ class EMSynchronyConnection < BlockingConnection
 
   def fail(info)
     fill_info info
-    info[:failing_connection] = self.object_id
+    info[:failing_connection] = self
     raise "Sadly failing here..."
   end
 end

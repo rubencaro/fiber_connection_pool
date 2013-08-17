@@ -75,7 +75,9 @@ class TestFiberConnectionPool < Minitest::Test
         pool.fail(info)
       rescue
         pool.with_failed_connection do |connection|
-          info[:repaired_connection] = connection.object_id
+          info[:repaired_connection] = connection
+          # replace it in the pool
+          ::EMSynchronyConnection.new(:delay => 0.05)
         end
       end
     end
@@ -85,13 +87,17 @@ class TestFiberConnectionPool < Minitest::Test
 
     run_em_reactor fibers
 
-    # we should have visited 1 thread, 15 fibers and 5 instances
-    info.dup.each{ |k,v| info[k] = v.uniq }
+    # we should have visited 1 thread, 15 fibers and 6 instances (including failed)
+    info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
     assert_equal 1, info[:threads].count
     assert_equal 15, info[:fibers].count
-    assert_equal 5, info[:instances].count
+    assert_equal 6, info[:instances].count
 
+    # assert we do not lose track of failing connection
     assert_equal info[:repaired_connection], info[:failing_connection]
+
+    # assert we replaced it
+    refute pool.has_connection?(info[:failing_connection])
   end
 
 
