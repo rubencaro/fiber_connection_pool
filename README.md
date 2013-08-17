@@ -91,7 +91,7 @@ MySQL specific
 By now we have only thought and tested it to be used with MySQL connections.
 For EventMachine by using `Mysql2::EM::Client` from [em-synchrony](https://github.com/igrigorik/em-synchrony).
 And for Celluloid by using a patched version of [ruby-mysql](https://github.com/rubencaro/ruby-mysql).
-We plan on removing any MySQL specific code, so it becomes completely generic. Does not seem so hard to achieve.
+We plan on removing any MySQL specific code by 0.2, so it becomes completely generic. Does not seem so hard to achieve.
 
 Reacting to connection failure
 ------------------
@@ -111,11 +111,6 @@ Supported Platforms
 Used in production environments on Ruby 1.9.3 and 2.0.0.
 Tested against Ruby 1.9.3, 2.0.0, and rbx-19mode ([See details..](http://travis-ci.org/rubencaro/fiber_connection_pool)).
 
-TODOS
+More to come !
 -------------------
-
-* no MySQL-specific code
-* better testing
-* improve reaction to failure
-* better in-code docs
-* make thread-safe
+See [issues](https://github.com/rubencaro/fiber_connection_pool/issues?direction=desc&sort=updated&state=open)
