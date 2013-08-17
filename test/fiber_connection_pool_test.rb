@@ -98,6 +98,77 @@ class TestFiberConnectionPool < Minitest::Test
 
     # assert we replaced it
     refute pool.has_connection?(info[:failing_connection])
+
+    #nothing left
+    assert_equal(pool.reserved_backup.count, 0)
+  end
+
+  def test_cleanup_abandoned_backups_we_need_it_we_have_it
+    info = { :threads => [], :fibers => [], :instances => []}
+
+    # get pool and fibers
+    pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
+
+    fibers = Array.new(4){ Fiber.new { pool.do_something(info) } }
+
+    # we do not repair it, backup associated with this Fiber stays in the pool
+    failing_fiber = Fiber.new { pool.fail(info) rescue nil }
+
+    # put it among others, not the first or the last
+    # so we see it does not mistake the failing connection
+    fibers.insert 2,failing_fiber
+
+    run_em_reactor fibers
+
+    # we should have visited only 2 instances (no instance added by repairing broken one)
+    info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
+    assert_equal 2, info[:instances].count
+
+    # one left
+    assert_equal(pool.reserved_backup.count, 1)
+
+    # fire cleanup
+    pool.backup_cleanup
+
+    # nothing left
+    assert_equal(pool.reserved_backup.count, 0)
+
+    # assert we did not replace it
+    assert pool.has_connection?(info[:failing_connection])
+  end
+
+  def test_auto_cleanup_abandoned_backups
+    # lower ttl to force auto cleanup
+    prev_ttl = force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, 0
+
+    info = { :threads => [], :fibers => [], :instances => []}
+
+    # get pool and fibers
+    pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
+
+    fibers = Array.new(4){ Fiber.new { pool.do_something(info) } }
+
+    # we do not repair it, backup associated with this Fiber stays in the pool
+    failing_fiber = Fiber.new { pool.fail(info) rescue nil }
+
+    # put it among others, not the first or the last
+    # so we see it does not mistake the failing connection
+    fibers.insert 2,failing_fiber
+
+    run_em_reactor fibers
+
+    # we should have visited only 2 instances (no instance added by repairing broken one)
+    info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
+    assert_equal 2, info[:instances].count
+
+    # nothing left
+    assert_equal(pool.reserved_backup.count, 0)
+
+    # assert we did not replace it
+    assert pool.has_connection?(info[:failing_connection])
+
+    # restore
+    force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, prev_ttl
   end
 
 

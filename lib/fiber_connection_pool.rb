@@ -1,9 +1,11 @@
 require 'fiber'
 
 class FiberConnectionPool
-  VERSION = '0.1.3'
+  VERSION = '0.2.0'
 
-  attr_accessor :saved_data
+  RESERVED_BACKUP_TTL_SECS = 30 # reserved backup cleanup trigger
+
+  attr_accessor :saved_data, :reserved_backup
 
   # Initializes the pool with 'size' instances
   # running the given block to get each one. Ex:
@@ -16,6 +18,7 @@ class FiberConnectionPool
     @saved_data = {} # placeholder for requested save data
     @reserved  = {}   # map of in-progress connections
     @reserved_backup = {}   # backup map of in-progress connections, to catch failures
+    @last_backup_cleanup = Time.now # reserved backup cleanup trigger
     @available = []   # pool of free connections
     @pending   = []   # pending reservations (FIFO)
 
@@ -48,7 +51,7 @@ class FiberConnectionPool
   end
 
   def with_failed_connection
-    bad_conn = @reserved_backup[Fiber.current.object_id]
+    bad_conn = @reserved_backup[Fiber.current]
     new_conn = yield bad_conn
     release_backup Fiber.current
     @available.reject!{ |v| v == bad_conn }
@@ -59,6 +62,13 @@ class FiberConnectionPool
       bad_conn.close
     rescue
     end
+  end
+
+  def backup_cleanup
+    @reserved_backup.dup.each do |k,v|
+      @reserved_backup.delete(k) if not k.alive?
+    end
+    @last_backup_cleanup = Time.now
   end
 
   private
@@ -89,7 +99,7 @@ class FiberConnectionPool
 
     if conn = @available.pop
       @reserved[fiber.object_id] = conn
-      @reserved_backup[fiber.object_id] = conn
+      @reserved_backup[fiber] = conn
       conn
     else
       Fiber.yield @pending.push fiber
@@ -99,7 +109,9 @@ class FiberConnectionPool
 
   # Release connection from the backup hash
   def release_backup(fiber)
-    @reserved_backup.delete(fiber.object_id)
+    @reserved_backup.delete(fiber)
+    # try cleanup
+    backup_cleanup if (Time.now - @last_backup_cleanup) > RESERVED_BACKUP_TTL_SECS
   end
 
   # Release connection assigned to the supplied fiber and

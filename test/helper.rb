@@ -50,3 +50,9 @@ def run_em_reactor(fibers)
   end
   b-a
 end
+
+def force_constant(klass, name, value)
+  previous_value = klass.send(:remove_const, name)
+  klass.const_set name.to_s, value
+  previous_value
+end
