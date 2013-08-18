@@ -102,8 +102,13 @@ class TestFiberConnectionPool < Minitest::Test
     # assert we replaced it
     refute pool.has_connection?(info[:failing_connection])
 
-    #nothing left
+    # nothing left
     assert_equal(0, pool.reserved_backup.count)
+
+    # if dealing with failed connection where you shouldn't...
+    assert_raises NoBackupConnection do
+      pool.with_failed_connection{ |c| 'boo' }
+    end
   end
 
   def test_reserved_backups

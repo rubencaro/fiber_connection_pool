@@ -1,4 +1,5 @@
 require 'fiber'
+require_relative 'fiber_connection_pool/exceptions'
 
 class FiberConnectionPool
   VERSION = '0.2.0'
@@ -22,7 +23,7 @@ class FiberConnectionPool
     @last_backup_cleanup = Time.now # reserved backup cleanup trigger
     @available = []   # pool of free connections
     @pending   = []   # pending reservations (FIFO)
-    @save_data_blocks = {} # blocks to be yielded to save data
+    @save_data_requests = {} # blocks to be yielded to save data
     @last_data_cleanup = Time.now # saved_data cleanup trigger
 
     @available = Array.new(opts[:size].to_i) { yield }
@@ -38,18 +39,51 @@ class FiberConnectionPool
     @saved_data.delete Fiber.current
   end
 
+  # Add a save_data request to the pool.
+  # The given block will be executed after each successful
+  # call to -any- method on the connection.
+  # The connection and the method name are passed to the block.
+  #
+  # The returned value will be saved in pool.saved_data[Fiber.current][key],
+  # and will be kept as long as the fiber stays alive.
+  #
+  # Ex:
+  #
+  #   # (...right after pool's creation...)
+  #   pool.save_data(:hey_or_hoo) do |conn, method|
+  #     return 'hey' if method == 'query'
+  #     'hoo'
+  #   end
+  #
+  #   # (...from a reactor fiber...)
+  #   myfiber = Fiber.current
+  #   pool.query('select anything from anywhere')
+  #   puts pool.saved_data[myfiber][:hey_or_hoo]
+  #     => 'hey'
+  #
+  #   # (...eventually fiber dies...)
+  #   puts pool.saved_data[myfiber].inspect
+  #     => nil
+  #
   def save_data(key, &block)
-    @save_data_blocks[key] = block
+    @save_data_requests[key] = block
   end
 
+  # Clear any save_data requests in the pool.
+  # No data will be saved after this, unless new requests are added with #save_data.
+  #
   def clear_save_data_requests
-    @save_data_blocks = {}
+    @save_data_requests = {}
   end
 
+  # Delete any saved_data for given fiber
+  #
   def release_data(fiber)
     @saved_data.delete(fiber)
   end
 
+  # Delete any saved_data held for dead fibers
+  #
   def save_data_cleanup
     @saved_data.dup.each do |k,v|
       @saved_data.delete(k) if not k.alive?
@@ -57,15 +91,16 @@ class FiberConnectionPool
     @last_data_cleanup = Time.now
   end
 
-  ##
-  # avoid method_missing for most common methods
+  # Avoid method_missing stack for 'query'
   #
   def query(sql)
-    execute(false,'query') do |conn|
+    execute('query') do |conn|
       conn.query sql
     end
   end
 
+  # True if the given connection is anywhere inside the pool
+  #
   def has_connection?(conn)
     (@available + @reserved.values).include?(conn)
   end
@@ -75,10 +110,17 @@ class FiberConnectionPool
     with_failed_connection { new_conn }
   end
 
+  # Identify the connection that just failed for current fiber.
+  # Pass it to the given block, which must return a valid instance of connection.
+  # After that, put the new connection into the pool in failed connection's place.
+  # Raises NoBackupConnection if cannot find the failed connection instance.
+  #
   def with_failed_connection
-    bad_conn = @reserved_backup[Fiber.current]
+    f = Fiber.current
+    bad_conn = @reserved_backup[f]
+    raise NoBackupConnection.new if bad_conn.nil?
     new_conn = yield bad_conn
-    release_backup Fiber.current
+    release_backup f
     @available.reject!{ |v| v == bad_conn }
     @reserved.reject!{ |k,v| v == bad_conn }
     @available.push new_conn
@@ -89,6 +131,8 @@ class FiberConnectionPool
     end
   end
 
+  # Delete any backups held for dead fibers
+  #
   def backup_cleanup
     @reserved_backup.dup.each do |k,v|
       @reserved_backup.delete(k) if not k.alive?
@@ -99,34 +143,47 @@ class FiberConnectionPool
   private
 
   # Choose first available connection and pass it to the supplied
-  # block. This will block indefinitely until there is an available
+  # block. This will block (yield) indefinitely until there is an available
   # connection to service the request.
-  def execute(async,method)
+  #
+  # After running the block, save requested data and release the connection.
+  #
+  def execute(method)
     f = Fiber.current
-
     begin
+      # get a connection and use it
       conn = acquire(f)
       retval = yield conn
 
-      @save_data_blocks.each do |key,block|
-        @saved_data[f] ||= {}
-        @saved_data[f][key] = block.call(conn)
-      end
-      # try cleanup
-      save_data_cleanup if (Time.now - @last_data_cleanup) >= SAVED_DATA_TTL_SECS
+      # save anything requested
+      process_save_data(f, conn, method)
 
-      release_backup(f) if !async
+      # successful run, release_backup
+      release_backup(f)
+
       retval
     ensure
-      release(f) if not async
+      release(f)
     end
   end
 
-  # Acquire a lock on a connection and assign it to executing fiber
-  # - if connection is available, pass it back to the calling block
-  # - if pool is full, yield the current fiber until connection is available
-  def acquire(fiber)
+  # Run each save_data_block over the given connection
+  # and save the data for the given fiber.
+  # Also perform cleanup if TTL is past
+  #
+  def process_save_data(fiber, conn, method)
+    @save_data_requests.each do |key,block|
+      @saved_data[fiber] ||= {}
+      @saved_data[fiber][key] = block.call(conn, method)
+    end
+    # try cleanup
+    save_data_cleanup if (Time.now - @last_data_cleanup) >= SAVED_DATA_TTL_SECS
+  end
 
+  # Acquire a lock on a connection and assign it to given fiber
+  # If no connection is available, yield the given fiber on the pending array
+  #
+  def acquire(fiber)
     if conn = @available.pop
       @reserved[fiber.object_id] = conn
       @reserved_backup[fiber] = conn
@@ -138,6 +195,8 @@ class FiberConnectionPool
   end
 
   # Release connection from the backup hash
+  # Also perform cleanup if TTL is past
+  #
   def release_backup(fiber)
     @reserved_backup.delete(fiber)
     # try cleanup
@@ -147,6 +206,7 @@ class FiberConnectionPool
   # Release connection assigned to the supplied fiber and
   # resume any other pending connections (which will
   # immediately try to run acquire on the pool)
+  #
   def release(fiber)
     @available.push(@reserved.delete(fiber.object_id)).compact!
 
@@ -157,29 +217,13 @@ class FiberConnectionPool
 
   # Allow the pool to behave as the underlying connection
   #
-  # If the requesting method begins with "a" prefix, then
-  # hijack the callbacks and errbacks to fire a connection
-  # pool release whenever the request is complete. Otherwise
-  # yield the connection within execute method and release
-  # once it is complete (assumption: fiber will yield until
-  # data is available, or request is complete)
+  # Yield the connection within execute method and release
+  # once it is complete (assumption: fiber will yield while
+  # waiting for IO, allowing the reactor run other fibers)
   #
   def method_missing(method, *args, &blk)
-    async = (method[0,1] == "a")
-
-    execute(async,method) do |conn|
-      df = conn.send(method, *args, &blk)
-
-      if async
-        fiber = Fiber.current
-        df.callback do
-          release(fiber)
-          release_backup(fiber)
-        end
-        df.errback { release(fiber) }
-      end
-
-      df
+    execute(method) do |conn|
+      conn.send(method, *args, &blk)
     end
   end
 end
