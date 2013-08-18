@@ -9,20 +9,20 @@ class BlockingConnection
     @delay = opts[:delay] || 0.05
   end
 
-  def do_something(info)
+  def do_something(info = {})
     fill_info info
     sleep @delay
   end
 
-  def fill_info(info)
-    info[:threads] << Thread.current.object_id
-    info[:fibers] << Fiber.current.object_id
-    info[:instances] << self.object_id
+  def fill_info(info = {})
+    info[:threads] << Thread.current.object_id if info[:threads]
+    info[:fibers] << Fiber.current.object_id if info[:fibers]
+    info[:instances] << self.object_id if info[:instances]
   end
 end
 
 class EMSynchronyConnection < BlockingConnection
-  def do_something(info)
+  def do_something(info = {})
     fill_info info
     EM::Synchrony.sleep @delay
   end
