@@ -68,7 +68,7 @@ class TestFiberConnectionPool < Minitest::Test
   end
 
   def test_failure_reaction
-    info = { :threads => [], :fibers => [], :instances => []}
+    info = { :instances => [] }
 
     # get pool and fibers
     pool = FiberConnectionPool.new(:size => 5) { ::EMSynchronyConnection.new(:delay => 0.05) }
@@ -94,8 +94,6 @@ class TestFiberConnectionPool < Minitest::Test
 
     # we should have visited 1 thread, 15 fibers and 6 instances (including failed)
     info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
-    assert_equal 1, info[:threads].count
-    assert_equal 15, info[:fibers].count
     assert_equal 6, info[:instances].count
 
     # assert we do not lose track of failing connection
@@ -108,8 +106,8 @@ class TestFiberConnectionPool < Minitest::Test
     assert_equal(pool.reserved_backup.count, 0)
   end
 
-  def test_cleanup_abandoned_backups_we_need_it_we_have_it
-    info = { :threads => [], :fibers => [], :instances => []}
+  def test_reserved_backups
+    info = { :instances => [] }
 
     # get pool and fibers
     pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
@@ -142,11 +140,11 @@ class TestFiberConnectionPool < Minitest::Test
     assert pool.has_connection?(info[:failing_connection])
   end
 
-  def test_auto_cleanup_abandoned_backups
+  def test_auto_cleanup_reserved_backups
     # lower ttl to force auto cleanup
     prev_ttl = force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, 0
 
-    info = { :threads => [], :fibers => [], :instances => []}
+    info = { :instances => [] }
 
     # get pool and fibers
     pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
@@ -171,10 +169,45 @@ class TestFiberConnectionPool < Minitest::Test
 
     # assert we did not replace it
     assert pool.has_connection?(info[:failing_connection])
-
+  ensure
     # restore
     force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, prev_ttl
   end
 
+  def test_save_data
+    info = { :instances => [] }
+
+    # get pool and fibers
+    pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
+
+    fibers = Array.new(4){ Fiber.new { pool.do_something(info) } }
+
+    # ask to save some data
+    pool.save_data(:connection_id) { |conn| conn.object_id }
+
+    run_em_reactor fibers
+
+    # we should have visited only 2 instances
+    info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
+    assert_equal 2, info[:instances].count
+
+    # gathered data for all 4 fibers
+    assert fibers.all?{ |f| not pool.saved_data[f].nil? },
+        "fibers: #{fibers}, saved_data: #{pool.saved_data}"
+
+    # gathered 2 times each connection
+    assert info[:instances].all?{ |i| pool.saved_data.count(i) == 2 },
+        "info: #{info}, saved_data: #{pool.saved_data}"
+
+    # fire cleanup
+    pool.save_data_cleanup
+
+    # nothing left
+    assert_equal(pool.saved_data.count, 0)
+  end
+
+  def test_auto_cleanup_saved_data
+    skip __method__
+  end
 
 end
