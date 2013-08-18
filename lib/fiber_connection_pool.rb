@@ -4,6 +4,7 @@ class FiberConnectionPool
   VERSION = '0.2.0'
 
   RESERVED_BACKUP_TTL_SECS = 30 # reserved backup cleanup trigger
+  SAVED_DATA_TTL_SECS = 30 # saved_data cleanup trigger
 
   attr_accessor :saved_data, :reserved_backup
 
@@ -21,16 +22,39 @@ class FiberConnectionPool
     @last_backup_cleanup = Time.now # reserved backup cleanup trigger
     @available = []   # pool of free connections
     @pending   = []   # pending reservations (FIFO)
+    @save_data_blocks = {} # blocks to be yielded to save data
+    @last_data_cleanup = Time.now # saved_data cleanup trigger
 
     @available = Array.new(opts[:size].to_i) { yield }
   end
 
+  # DEPRECATED: use save_data
   def save_data_for_fiber
-    @saved_data[Fiber.current.object_id] ||= {}
+    nil
   end
 
+  # DEPRECATED: use release_data
   def stop_saving_data_for_fiber
-    @saved_data.delete Fiber.current.object_id
+    @saved_data.delete Fiber.current
+  end
+
+  def save_data(key, &block)
+    @save_data_blocks[key] = block
+  end
+
+  def clear_save_data_requests
+    @save_data_blocks = {}
+  end
+
+  def release_data(fiber)
+    @saved_data.delete(fiber)
+  end
+
+  def save_data_cleanup
+    @saved_data.dup.each do |k,v|
+      @saved_data.delete(k) if not k.alive?
+    end
+    @last_data_cleanup = Time.now
   end
 
   ##
@@ -46,6 +70,7 @@ class FiberConnectionPool
     (@available + @reserved.values).include?(conn)
   end
 
+  # DEPRECATED: use with_failed_connection
   def recreate_connection(new_conn)
     with_failed_connection { new_conn }
   end
@@ -82,9 +107,14 @@ class FiberConnectionPool
     begin
       conn = acquire(f)
       retval = yield conn
-      if !@saved_data[Fiber.current.object_id].nil?
-        @saved_data[Fiber.current.object_id]['affected_rows'] = conn.affected_rows
+
+      @save_data_blocks.each do |key,block|
+        @saved_data[f] ||= {}
+        @saved_data[f][key] = block.call(conn)
       end
+      # try cleanup
+      save_data_cleanup if (Time.now - @last_data_cleanup) >= SAVED_DATA_TTL_SECS
+
       release_backup(f) if !async
       retval
     ensure
@@ -111,7 +141,7 @@ class FiberConnectionPool
   def release_backup(fiber)
     @reserved_backup.delete(fiber)
     # try cleanup
-    backup_cleanup if (Time.now - @last_backup_cleanup) > RESERVED_BACKUP_TTL_SECS
+    backup_cleanup if (Time.now - @last_backup_cleanup) >= RESERVED_BACKUP_TTL_SECS
   end
 
   # Release connection assigned to the supplied fiber and

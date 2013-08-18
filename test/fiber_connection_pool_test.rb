@@ -103,38 +103,21 @@ class TestFiberConnectionPool < Minitest::Test
     refute pool.has_connection?(info[:failing_connection])
 
     #nothing left
-    assert_equal(pool.reserved_backup.count, 0)
+    assert_equal(0, pool.reserved_backup.count)
   end
 
   def test_reserved_backups
-    info = { :instances => [] }
-
-    # get pool and fibers
-    pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
-
-    fibers = Array.new(4){ Fiber.new { pool.do_something(info) } }
-
-    # we do not repair it, backup associated with this Fiber stays in the pool
-    failing_fiber = Fiber.new { pool.fail(info) rescue nil }
-
-    # put it among others, not the first or the last
-    # so we see it does not mistake the failing connection
-    fibers.insert 2,failing_fiber
-
-    run_em_reactor fibers
-
-    # we should have visited only 2 instances (no instance added by repairing broken one)
-    info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
-    assert_equal 2, info[:instances].count
+    # create pool, run fibers and gather info
+    pool, info = run_reserved_backups
 
     # one left
-    assert_equal(pool.reserved_backup.count, 1)
+    assert_equal(1, pool.reserved_backup.count)
 
     # fire cleanup
     pool.backup_cleanup
 
     # nothing left
-    assert_equal(pool.reserved_backup.count, 0)
+    assert_equal(0, pool.reserved_backup.count)
 
     # assert we did not replace it
     assert pool.has_connection?(info[:failing_connection])
@@ -144,6 +127,58 @@ class TestFiberConnectionPool < Minitest::Test
     # lower ttl to force auto cleanup
     prev_ttl = force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, 0
 
+    # create pool, run fibers and gather info
+    pool, info = run_reserved_backups
+
+    # nothing left, because failing fiber was not the last to run
+    # the following fiber made the cleanup
+    assert_equal(0, pool.reserved_backup.count)
+
+    # assert we did not replace it
+    assert pool.has_connection?(info[:failing_connection])
+  ensure
+    # restore
+    force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, prev_ttl
+  end
+
+  def test_save_data
+    # create pool, run fibers and gather info
+    pool, fibers, info = run_saved_data
+
+    # gathered data for all 4 fibers
+    assert fibers.all?{ |f| not pool.saved_data[f].nil? },
+        "fibers: #{fibers}, saved_data: #{pool.saved_data}"
+
+    # gathered 2 times each connection
+    connection_ids = pool.saved_data.values.map{ |v| v[:connection_id] }
+    assert info[:instances].all?{ |i| connection_ids.count(i) == 2 },
+        "info: #{info}, saved_data: #{pool.saved_data}"
+
+    # fire cleanup
+    pool.save_data_cleanup
+
+    # nothing left
+    assert_equal(0, pool.saved_data.count)
+  end
+
+  def test_auto_cleanup_saved_data
+    # lower ttl to force auto cleanup
+    prev_ttl = force_constant FiberConnectionPool, :SAVED_DATA_TTL_SECS, 0
+
+    # create pool, run fibers and gather info
+    pool, _, _ = run_saved_data
+
+    # only the last run left
+    # that fiber was the one making the cleanup, so it was still alive
+    assert_equal(1, pool.saved_data.count)
+  ensure
+    # restore
+    force_constant FiberConnectionPool, :SAVED_DATA_TTL_SECS, prev_ttl
+  end
+
+  private
+
+  def run_reserved_backups
     info = { :instances => [] }
 
     # get pool and fibers
@@ -164,17 +199,10 @@ class TestFiberConnectionPool < Minitest::Test
     info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
     assert_equal 2, info[:instances].count
 
-    # nothing left
-    assert_equal(pool.reserved_backup.count, 0)
-
-    # assert we did not replace it
-    assert pool.has_connection?(info[:failing_connection])
-  ensure
-    # restore
-    force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, prev_ttl
+    [ pool, info ]
   end
 
-  def test_save_data
+  def run_saved_data
     info = { :instances => [] }
 
     # get pool and fibers
@@ -187,50 +215,11 @@ class TestFiberConnectionPool < Minitest::Test
 
     run_em_reactor fibers
 
-    # we should have visited only 2 instances
+    # we should have visited 2 instances
     info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
     assert_equal 2, info[:instances].count
 
-    # gathered data for all 4 fibers
-    assert fibers.all?{ |f| not pool.saved_data[f].nil? },
-        "fibers: #{fibers}, saved_data: #{pool.saved_data}"
-
-    # gathered 2 times each connection
-    assert info[:instances].all?{ |i| pool.saved_data.count(i) == 2 },
-        "info: #{info}, saved_data: #{pool.saved_data}"
-
-    # fire cleanup
-    pool.save_data_cleanup
-
-    # nothing left
-    assert_equal(pool.saved_data.count, 0)
-  end
-
-  def test_auto_cleanup_saved_data
-    # lower ttl to force auto cleanup
-    prev_ttl = force_constant FiberConnectionPool, :SAVED_DATA_TTL_SECS, 0
-
-    info = { :instances => [] }
-
-    # get pool and fibers
-    pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
-
-    fibers = Array.new(4){ Fiber.new { pool.do_something(info) } }
-
-    # ask to save some data
-    pool.save_data(:connection_id) { |conn| conn.object_id }
-
-    run_em_reactor fibers
-
-    # we should have visited only 2 instances
-    info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
-    assert_equal 2, info[:instances].count
-
-    # nothing left
-    assert_equal(pool.saved_data.count, 0)
-  ensure
-    # restore
-    force_constant FiberConnectionPool, :SAVED_DATA_TTL_SECS, prev_ttl
+    [ pool, fibers, info ]
   end
 
 end
