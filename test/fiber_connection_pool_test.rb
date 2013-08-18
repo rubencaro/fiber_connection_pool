@@ -50,6 +50,11 @@ class TestFiberConnectionPool < Minitest::Test
     assert_equal 5, info[:instances].count
   end
 
+  def test_celluloid_behaviour
+    skip 'Could not test celluloid 0.15.0pre, as it would not start reactor on test environment.
+          See the examples folder for a working celluloid (reel) server.'
+  end
+
   def test_size_is_mandatory
     assert_raises ArgumentError do
       FiberConnectionPool.new { ::BlockingConnection.new }
