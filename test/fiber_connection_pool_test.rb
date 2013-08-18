@@ -207,7 +207,30 @@ class TestFiberConnectionPool < Minitest::Test
   end
 
   def test_auto_cleanup_saved_data
-    skip __method__
+    # lower ttl to force auto cleanup
+    prev_ttl = force_constant FiberConnectionPool, :SAVED_DATA_TTL_SECS, 0
+
+    info = { :instances => [] }
+
+    # get pool and fibers
+    pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
+
+    fibers = Array.new(4){ Fiber.new { pool.do_something(info) } }
+
+    # ask to save some data
+    pool.save_data(:connection_id) { |conn| conn.object_id }
+
+    run_em_reactor fibers
+
+    # we should have visited only 2 instances
+    info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
+    assert_equal 2, info[:instances].count
+
+    # nothing left
+    assert_equal(pool.saved_data.count, 0)
+  ensure
+    # restore
+    force_constant FiberConnectionPool, :SAVED_DATA_TTL_SECS, prev_ttl
   end
 
 end
