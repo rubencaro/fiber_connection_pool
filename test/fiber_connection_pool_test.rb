@@ -213,10 +213,16 @@ class TestFiberConnectionPool < Minitest::Test
     # get pool and fibers
     pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
 
-    fibers = Array.new(4){ Fiber.new { pool.do_something(info) } }
-
     # ask to save some data
     pool.save_data(:connection_id) { |conn| conn.object_id }
+    pool.save_data(:fiber_id) { |conn| Fiber.current.object_id }
+
+    fibers = Array.new(4) do
+      Fiber.new do
+        pool.do_something(info)
+        assert_equal Fiber.current.object_id, pool.gathered_data[:fiber_id]
+      end
+    end
 
     run_em_reactor fibers
 

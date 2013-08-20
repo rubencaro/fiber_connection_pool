@@ -47,25 +47,31 @@ It just keeps an array (the internal pool) holding the result of running
 the given block _size_ times. Inside the reactor loop (either EventMachine's or Celluloid's),
 each request is wrapped on a Fiber, and then `pool` plays its magic.
 
-When a method `query_me` is called on `pool` and it's not one of its own methods,
-then it:
+``` ruby
+results = pool.query_me(sql)
+```
 
-1. reserves one connection from the internal pool and associates it __with the current Fiber__
-2. if no connection is available, then that Fiber stays on a _pending_ queue, and __is yielded__
-3. when a connection is available, then the pool calls `query_me` on that `MyFancyConnection` instance
-4. when `query_me` returns, the reserved instance is released again,
-and the next Fiber on the _pending_ queue __is resumed__
-5. the return value is sent back to the caller
+When a method `query_me` is called on `pool` it:
+
+1. Reserves one connection from the internal pool and associates it __with the current fiber__.
+2. If no connection is available, then that fiber stays on a _pending_ queue,
+and __is yielded__ until another connection is released.
+3. When a connection is available, then the pool calls `query_me` on that `MyFancyConnection` instance.
+4. When `query_me` returns, the reserved instance is released again,
+and the next fiber on the _pending_ queue __is resumed__.
+5. The return value is sent back to the caller.
 
 Methods from `MyFancyConnection` instance should yield the fiber before
 perform any blocking IO. That returns control to te underlying reactor,
 that spawns another fiber to process the next request, while the previous
 one is still waiting for the IO response. That new fiber will get its own
 connection from the pool, or else it will yield until there
-is one available.
+is one available. That behaviour is implemented on `Mysql2::EM::Client`
+from [em-synchrony](https://github.com/igrigorik/em-synchrony),
+and on a patched version of [ruby-mysql](https://github.com/rubencaro/ruby-mysql), for example.
 
-The whole process looks synchronous from the Fiber perspective, _because it is_.
-The Fiber will really block ( _yield_ ) until it gets the result.
+The whole process looks synchronous from the fiber perspective, _because it is_ indeed.
+The fiber will really block ( or _yield_ ) until it gets the result.
 
 ``` ruby
 results = pool.query_me(sql)
@@ -77,21 +83,21 @@ The magic resides on the fact that other fibers are being processed while this o
 Not thread-safe
 ------------------
 
-`FiberConnectionPool` is not thread-safe right now. You will not be able to use it
+`FiberConnectionPool` is not thread-safe. You will not be able to use it
 from different threads, as eventually it will try to resume a Fiber that resides
 on a different Thread. That will raise a FiberError( _"calling a fiber across threads"_ ).
-Maybe one day we add that feature too.
+Maybe one day we add that feature too. Or maybe it's not worth the added code complexity.
 
-We have tested it on Goliath servers having one pool on each server instance, and on Reel servers
-having one pool on each Actor thread. Take a look at the `examples` folder for details.
+We use it with no need to be thread-safe on Goliath servers having one pool on each server instance,
+and on Reel servers having one pool on each Actor thread. Take a look at the `examples` folder for details.
 
-MySQL specific
+Generic
 ------------------
 
-By now we have only thought and tested it to be used with MySQL connections.
-For EventMachine by using `Mysql2::EM::Client` from [em-synchrony](https://github.com/igrigorik/em-synchrony).
+We use it extensively with MySQL connections with Goliath servers by using `Mysql2::EM::Client`
+from [em-synchrony](https://github.com/igrigorik/em-synchrony).
 And for Celluloid by using a patched version of [ruby-mysql](https://github.com/rubencaro/ruby-mysql).
-We plan on removing any MySQL specific code by 0.2, so it becomes completely generic. Does not seem so hard to achieve.
+By >=0.2 there is no MySQL-specific code, so it can be used with any kind of connection that can be fibered.
 
 Reacting to connection failure
 ------------------
@@ -102,8 +108,81 @@ react as you would do normally.
 
 You have to be aware that the connection instance will remain in the pool, and other fibers
 will surely use it. If the Exception you rescued indicates that the connection should be
-recreated, you can call `recreate_connection` passing it a new instance. The instance that
-just failed will be replaced inside the pool by the brand new connection.
+recreated or treated somehow, there's a way to access that particular connection:
+
+``` ruby
+begin
+
+  pool.bad_query('will make me worse')
+
+rescue BadQueryMadeMeWorse
+
+  pool.with_failed_connection do |connection|
+    puts "Replacing #{connection.inspect} with a new one!"
+    MyFancyConnection.new
+  end
+
+end
+```
+
+The pool saves the connection when it raises an exception on a fiber, and with `with_failed_connection` lets
+you execute a block of code over it. It must return a connection instance, and it will be put inside the pool
+in place of the failed one. It can be the same instance after being fixed, or maybe a new one.
+The call to `with_failed_connection` must be made from the very same
+fiber that raised the exception.
+
+Also the reference to the failed connection will be lost after any method execution from that
+fiber. So you must call `with_failed_connection` before any other method that may acquire a new instance from the pool.
+
+Any reference to a failed connection is released when the fiber is dead, but as you must access it from the fiber itself, worry should not.
+
+Save data
+-------------------
+
+Sometimes we need to get something more than de return value from the `query_me` call, but that _something_ is related to _that_ call on _that_ connection.
+For example, maybe you need to call `affected_rows` right after the query was made on that particular connection.
+If you make that extra calls on the `pool` object, it will acquire a new connection from the pool an run on it. So it's useless.
+There is a way to gather all that data from the connection so we can work on it, but also release the connection for other fiber to use it.
+
+``` ruby
+# define the pool
+pool = FiberConnectionPool.new(:size => 5){ MyFancyConnection.new }
+
+# add a request to save data for each successful call on a connection
+# will save the return value inside a hash on the key ':affected_rows'
+# and make it available for the fiber that made the call
+pool.save_data(:affected_rows) do |connection|
+  connection.affected_rows
+end
+```
+
+Then from our fiber:
+
+``` ruby
+pool.query_me('affecting 5 rows right now')
+
+# recover gathered data for this fiber
+puts pool.gathered_data
+  => { :affected_rows => 5 }
+```
+
+You must access the gathered data from the same fiber that triggered its gathering.
+Also any new call to `query_me` or any other method from the connection would execute the block again,
+overwriting that position on the hash (unless you code to prevent it, of course). Usually you would use the gathered data
+right after you made the query that generated it. But you could:
+
+``` ruby
+# save only the first run
+pool.save_data(:affected_rows) do |connection|
+  pool.gathered_data[:affected_rows] || connection.affected_rows
+end
+```
+
+You can define as much `save_data` blocks as you want, and run any wonder ruby lets you. But great power comes with great responsability.
+You must consider that any requests for saving data are executed for _every call_ on the pool from that fiber.
+So keep it stupid simple, and blindly fast. At least as much as you can. That would affect performance otherwise.
+
+Any gathered_data is released when the fiber is dead, but as you must access it from the fiber itself, worry should not.
 
 Supported Platforms
 -------------------

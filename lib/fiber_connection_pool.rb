@@ -69,6 +69,12 @@ class FiberConnectionPool
     @save_data_requests[key] = block
   end
 
+  # Return the gathered data for this fiber
+  #
+  def gathered_data
+    @saved_data[Fiber.current]
+  end
+
   # Clear any save_data requests in the pool.
   # No data will be saved after this, unless new requests are added with #save_data.
   #
