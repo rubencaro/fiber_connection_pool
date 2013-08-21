@@ -3,6 +3,7 @@ fiber_connection_pool
 
 [![Build Status](https://secure.travis-ci.org/rubencaro/fiber_connection_pool.png?branch=master)](http://travis-ci.org/rubencaro/fiber_connection_pool)
 [![Gem Version](https://badge.fury.io/rb/fiber_connection_pool.png)](http://rubygems.org/gems/fiber_connection_pool)
+[![Code Climate](https://codeclimate.com/github/rubencaro/fiber_connection_pool.png)](https://codeclimate.com/github/rubencaro/fiber_connection_pool)
 
 Fiber-based generic connection pool
 
