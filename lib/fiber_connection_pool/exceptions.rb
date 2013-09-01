@@ -1,6 +1,6 @@
 
-class NoBackupConnection < Exception
+class NoReservedConnection < Exception
   def initialize
-    super "No backup connection for this fiber!"
+    super "No reserved connection for this fiber!"
   end
 end
