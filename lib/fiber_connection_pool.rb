@@ -166,10 +166,12 @@ class FiberConnectionPool
       release(f)
 
       retval
-    rescue *treated_exceptions
+    rescue *treated_exceptions => ex
       # do not release connection for these
       # maybe prepare something here to be used on connection repair
-    else
+      puts "rescued! ex:#{ex}" # trace:#{ex.backtrace}"
+    rescue Exception => ex
+      puts "not rescued! ex:#{ex}" # trace:#{ex.backtrace}"
       # not successful run, but not meant to be treated
       release(f)
     end

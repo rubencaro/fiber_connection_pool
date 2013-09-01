@@ -90,7 +90,7 @@ class TestFiberConnectionPool < Minitest::Test
     end
     # put it among others, not the first or the last
     # so we see it does not mistake the failing connection
-    fibers.insert 7,failing_fiber
+    fibers.insert 2,failing_fiber
 
     failing_fiber_not_treated = Fiber.new do
       begin
@@ -104,9 +104,12 @@ class TestFiberConnectionPool < Minitest::Test
     end
     # put it among others, not the first or the last
     # so we see it does not mistake the failing connection
-    fibers.insert 3,failing_fiber_not_treated
+    fibers.insert 7,failing_fiber_not_treated
 
     run_em_reactor fibers
+
+    require 'yaml'
+    puts info.to_yaml
 
     # we should have visited 1 thread, 15 fibers and 6 instances (including repaired)
     assert_equal 6, info[:instances].count
@@ -128,40 +131,40 @@ class TestFiberConnectionPool < Minitest::Test
     end
   end
 
-  def test_reserved_backups
-    # create pool, run fibers and gather info
-    pool, info = run_reserved_backups
+#  def test_reserved_backups
+#    # create pool, run fibers and gather info
+#    pool, info = run_reserved_backups
 
-    # one left
-    assert_equal(1, pool.reserved_backup.count)
+#    # one left
+#    assert_equal(1, pool.reserved_backup.count)
 
-    # fire cleanup
-    pool.backup_cleanup
+#    # fire cleanup
+#    pool.backup_cleanup
 
-    # nothing left
-    assert_equal(0, pool.reserved_backup.count)
+#    # nothing left
+#    assert_equal(0, pool.reserved_backup.count)
 
-    # assert we did not replace it
-    assert pool.has_connection?(info[:failing_connections].first)
-  end
+#    # assert we did not replace it
+#    assert pool.has_connection?(info[:failing_connections].first)
+#  end
 
-  def test_auto_cleanup_reserved_backups
-    # lower ttl to force auto cleanup
-    prev_ttl = force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, 0
+#  def test_auto_cleanup_reserved_backups
+#    # lower ttl to force auto cleanup
+#    prev_ttl = force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, 0
 
-    # create pool, run fibers and gather info
-    pool, info = run_reserved_backups
+#    # create pool, run fibers and gather info
+#    pool, info = run_reserved_backups
 
-    # nothing left, because failing fiber was not the last to run
-    # the following fiber made the cleanup
-    assert_equal(0, pool.reserved_backup.count)
+#    # nothing left, because failing fiber was not the last to run
+#    # the following fiber made the cleanup
+#    assert_equal(0, pool.reserved_backup.count)
 
-    # assert we did not replace it
-    assert pool.has_connection?(info[:failing_connections].first)
-  ensure
-    # restore
-    force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, prev_ttl
-  end
+#    # assert we did not replace it
+#    assert pool.has_connection?(info[:failing_connections].first)
+#  ensure
+#    # restore
+#    force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, prev_ttl
+#  end
 
   def test_save_data
     # create pool, run fibers and gather info
