@@ -4,3 +4,5 @@ class NoReservedConnection < Exception
     super "No reserved connection for this fiber!"
   end
 end
+
+class PlaceholderException < Exception; end

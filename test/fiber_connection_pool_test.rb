@@ -97,7 +97,7 @@ class TestFiberConnectionPool < Minitest::Test
         pool.fail_not_treated(info)
       rescue
         # not meant to be treated
-        assert_raises NoBackupConnection do
+        assert_raises NoReservedConnection do
           pool.with_failed_connection{ |c| 'boo' }
         end
       end
@@ -123,7 +123,7 @@ class TestFiberConnectionPool < Minitest::Test
     assert_equal(0, pool.reserved_backup.count)
 
     # if dealing with failed connection where you shouldn't...
-    assert_raises NoBackupConnection do
+    assert_raises NoReservedConnection do
       pool.with_failed_connection{ |c| 'boo' }
     end
   end

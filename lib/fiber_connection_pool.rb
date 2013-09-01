@@ -19,7 +19,7 @@ class FiberConnectionPool
 
     @saved_data = {} # placeholder for requested save data
     @reserved  = {}   # map of in-progress connections
-    @treated_exceptions = []  # list of Exception classes that need further connection treatment
+    @treated_exceptions = [ PlaceholderException ]  # list of Exception classes that need further connection treatment
     @last_reserved_cleanup = Time.now # reserved cleanup trigger
     @available = []   # pool of free connections
     @pending   = []   # pending reservations (FIFO)
@@ -122,8 +122,7 @@ class FiberConnectionPool
   # Raises NoReservedConnection if cannot find the failed connection instance.
   #
   def with_failed_connection
-    f = Fiber.current
-    bad_conn = @reserved[f]
+    bad_conn = @reserved[Fiber.current]
     raise NoReservedConnection.new if bad_conn.nil?
     new_conn = yield bad_conn
     @available.reject!{ |v| v == bad_conn }
@@ -169,6 +168,7 @@ class FiberConnectionPool
       retval
     rescue *treated_exceptions
       # do not release connection for these
+      # maybe prepare something here to be used on connection repair
     else
       # not successful run, but not meant to be treated
       release(f)
