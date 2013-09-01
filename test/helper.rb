@@ -21,6 +21,8 @@ class BlockingConnection
   end
 end
 
+class FakeException < Exception; end
+
 class EMSynchronyConnection < BlockingConnection
   def do_something(info = {})
     fill_info info
@@ -29,7 +31,13 @@ class EMSynchronyConnection < BlockingConnection
 
   def fail(info)
     fill_info info
-    info[:failing_connection] = self
+    info[:failing_connections] << self
+    raise FakeException.new "Sadly failing here..."
+  end
+
+  def fail_not_treated(info)
+    fill_info info
+    info[:failing_connections] << self
     raise "Sadly failing here..."
   end
 end

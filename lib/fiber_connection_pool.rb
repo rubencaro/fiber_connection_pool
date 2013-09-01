@@ -2,7 +2,7 @@ require 'fiber'
 require_relative 'fiber_connection_pool/exceptions'
 
 class FiberConnectionPool
-  VERSION = '0.2.0'
+  VERSION = '0.2.1'
 
   RESERVED_BACKUP_TTL_SECS = 30 # reserved backup cleanup trigger
   SAVED_DATA_TTL_SECS = 30 # saved_data cleanup trigger

@@ -1,11 +1,12 @@
 require 'helper'
+require 'set'
 
 class TestFiberConnectionPool < Minitest::Test
 
   def test_blocking_behaviour
     # get pool and fibers
     pool = FiberConnectionPool.new(:size => 5) { ::BlockingConnection.new(:delay => 0.05) }
-    info = { :threads => [], :fibers => [], :instances => []}
+    info = { :threads => [].to_set, :fibers => [].to_set, :instances => [].to_set}
 
     fibers = Array.new(15){ Fiber.new { pool.do_something(info) } }
 
@@ -21,14 +22,13 @@ class TestFiberConnectionPool < Minitest::Test
     # because as we are -blocking- it's always available
     # again for the next request
     # we should have visited 1 thread, 15 fibers and 1 instances
-    info.dup.each{ |k,v| info[k] = v.uniq }
     assert_equal 1, info[:threads].count
     assert_equal 15, info[:fibers].count
     assert_equal 1, info[:instances].count
   end
 
   def test_em_synchrony_behaviour
-    info = { :threads => [], :fibers => [], :instances => []}
+    info = { :threads => [].to_set, :fibers => [].to_set, :instances => [].to_set}
 
     # get pool and fibers
     pool = FiberConnectionPool.new(:size => 5) { ::EMSynchronyConnection.new(:delay => 0.05) }
@@ -44,7 +44,6 @@ class TestFiberConnectionPool < Minitest::Test
     assert_operator(lapse, :<, 0.20)
 
     # we should have visited 1 thread, 15 fibers and 5 instances
-    info.dup.each{ |k,v| info[k] = v.uniq }
     assert_equal 1, info[:threads].count
     assert_equal 15, info[:fibers].count
     assert_equal 5, info[:instances].count
@@ -68,19 +67,22 @@ class TestFiberConnectionPool < Minitest::Test
   end
 
   def test_failure_reaction
-    info = { :instances => [] }
+    info = { :instances => [].to_set, :repaired_connections => [].to_set, :failing_connections => [].to_set }
 
     # get pool and fibers
     pool = FiberConnectionPool.new(:size => 5) { ::EMSynchronyConnection.new(:delay => 0.05) }
 
     fibers = Array.new(14){ Fiber.new { pool.do_something(info) } }
 
+    # state which exceptions should be treated
+    pool.treated_exceptions = [ FakeException ]
+
     failing_fiber = Fiber.new do
       begin
         pool.fail(info)
       rescue
         pool.with_failed_connection do |connection|
-          info[:repaired_connection] = connection
+          info[:repaired_connections] << connection
           # replace it in the pool
           ::EMSynchronyConnection.new(:delay => 0.05)
         end
@@ -90,17 +92,32 @@ class TestFiberConnectionPool < Minitest::Test
     # so we see it does not mistake the failing connection
     fibers.insert 7,failing_fiber
 
+    failing_fiber_not_treated = Fiber.new do
+      begin
+        pool.fail_not_treated(info)
+      rescue
+        # not meant to be treated
+        assert_raises NoBackupConnection do
+          pool.with_failed_connection{ |c| 'boo' }
+        end
+      end
+    end
+    # put it among others, not the first or the last
+    # so we see it does not mistake the failing connection
+    fibers.insert 3,failing_fiber_not_treated
+
     run_em_reactor fibers
 
-    # we should have visited 1 thread, 15 fibers and 6 instances (including failed)
-    info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
+    # we should have visited 1 thread, 15 fibers and 6 instances (including repaired)
     assert_equal 6, info[:instances].count
 
-    # assert we do not lose track of failing connection
-    assert_equal info[:repaired_connection], info[:failing_connection]
+    # assert we do not lose track of failing connections, but only repair those that needed it
+    assert info[:failing_connections].include?(info[:repaired_connections])
+    assert_equal 2, info[:failing_connections].count
+    assert_equal 1, info[:repaired_connections].count
 
     # assert we replaced it
-    refute pool.has_connection?(info[:failing_connection])
+    refute pool.has_connection?(info[:repaired_connections].first)
 
     # nothing left
     assert_equal(0, pool.reserved_backup.count)
@@ -125,7 +142,7 @@ class TestFiberConnectionPool < Minitest::Test
     assert_equal(0, pool.reserved_backup.count)
 
     # assert we did not replace it
-    assert pool.has_connection?(info[:failing_connection])
+    assert pool.has_connection?(info[:failing_connections].first)
   end
 
   def test_auto_cleanup_reserved_backups
@@ -140,7 +157,7 @@ class TestFiberConnectionPool < Minitest::Test
     assert_equal(0, pool.reserved_backup.count)
 
     # assert we did not replace it
-    assert pool.has_connection?(info[:failing_connection])
+    assert pool.has_connection?(info[:failing_connections].first)
   ensure
     # restore
     force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, prev_ttl
@@ -184,12 +201,15 @@ class TestFiberConnectionPool < Minitest::Test
   private
 
   def run_reserved_backups
-    info = { :instances => [] }
+    info = { :instances => [].to_set }
 
     # get pool and fibers
     pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
 
     fibers = Array.new(4){ Fiber.new { pool.do_something(info) } }
+
+    # state which exceptions should be treated
+    pool.treated_exceptions = [ FakeException ]
 
     # we do not repair it, backup associated with this Fiber stays in the pool
     failing_fiber = Fiber.new { pool.fail(info) rescue nil }
@@ -198,17 +218,23 @@ class TestFiberConnectionPool < Minitest::Test
     # so we see it does not mistake the failing connection
     fibers.insert 2,failing_fiber
 
+    # we do not repair it, but we did not mean to, so no backup for this Fiber
+    failing_fiber_not_treated = Fiber.new { pool.fail_not_treated(info) rescue nil }
+
+    # put it among others, not the first or the last
+    # so we see it does not mistake the failing connection
+    fibers.insert 1,failing_fiber_not_treated
+
     run_em_reactor fibers
 
     # we should have visited only 2 instances (no instance added by repairing broken one)
-    info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
     assert_equal 2, info[:instances].count
 
     [ pool, info ]
   end
 
   def run_saved_data
-    info = { :instances => [] }
+    info = { :instances => [].to_set }
 
     # get pool and fibers
     pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
@@ -227,7 +253,6 @@ class TestFiberConnectionPool < Minitest::Test
     run_em_reactor fibers
 
     # we should have visited 2 instances
-    info.dup.each{ |k,v| info[k] = v.uniq if v.is_a?(Array) }
     assert_equal 2, info[:instances].count
 
     [ pool, fibers, info ]
