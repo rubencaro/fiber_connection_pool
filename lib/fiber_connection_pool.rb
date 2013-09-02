@@ -209,7 +209,7 @@ class FiberConnectionPool
   # Also perform cleanup if TTL is past
   #
   def release(fiber)
-    @available.push(@reserved.delete(fiber)).compact!
+    @available.push @reserved.delete(fiber)
 
     # try cleanup
     reserved_cleanup if (Time.now - @last_reserved_cleanup) >= RESERVED_TTL_SECS
