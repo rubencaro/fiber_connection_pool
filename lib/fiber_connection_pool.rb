@@ -170,10 +170,12 @@ class FiberConnectionPool
       # do not release connection for these
       # maybe prepare something here to be used on connection repair
       puts "rescued! ex:#{ex}" # trace:#{ex.backtrace}"
+      raise ex
     rescue Exception => ex
       puts "not rescued! ex:#{ex}" # trace:#{ex.backtrace}"
       # not successful run, but not meant to be treated
       release(f)
+      raise ex
     end
   end
 
