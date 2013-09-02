@@ -1,5 +1,6 @@
 require 'helper'
 require 'set'
+require 'yaml'
 
 class TestFiberConnectionPool < Minitest::Test
 
@@ -108,22 +109,20 @@ class TestFiberConnectionPool < Minitest::Test
 
     run_em_reactor fibers
 
-    require 'yaml'
-    puts info.to_yaml
 
     # we should have visited 1 thread, 15 fibers and 6 instances (including repaired)
     assert_equal 6, info[:instances].count
 
     # assert we do not lose track of failing connections, but only repair those that needed it
-    assert info[:failing_connections].include?(info[:repaired_connections])
     assert_equal 2, info[:failing_connections].count
     assert_equal 1, info[:repaired_connections].count
+    assert info[:failing_connections].include?(info[:repaired_connections].first)
 
     # assert we replaced it
     refute pool.has_connection?(info[:repaired_connections].first)
 
     # nothing left
-    assert_equal(0, pool.reserved_backup.count)
+    assert_equal(0, pool.instance_variable_get(:@reserved).count)
 
     # if dealing with failed connection where you shouldn't...
     assert_raises NoReservedConnection do
@@ -131,40 +130,40 @@ class TestFiberConnectionPool < Minitest::Test
     end
   end
 
-#  def test_reserved_backups
-#    # create pool, run fibers and gather info
-#    pool, info = run_reserved_backups
+  def test_reserved
+    # create pool, run fibers and gather info
+    pool, info = run_reserved
 
-#    # one left
-#    assert_equal(1, pool.reserved_backup.count)
+    # one left
+    assert_equal(1, pool.instance_variable_get(:@reserved).count)
 
-#    # fire cleanup
-#    pool.backup_cleanup
+    # fire cleanup
+    pool.reserved_cleanup
 
-#    # nothing left
-#    assert_equal(0, pool.reserved_backup.count)
+    # nothing left
+    assert_equal(0, pool.instance_variable_get(:@reserved).count)
 
-#    # assert we did not replace it
-#    assert pool.has_connection?(info[:failing_connections].first)
-#  end
+    # assert we did not replace it
+    assert info[:failing_connections].all?{ |c| pool.has_connection?(c) }
+  end
 
-#  def test_auto_cleanup_reserved_backups
-#    # lower ttl to force auto cleanup
-#    prev_ttl = force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, 0
+  def test_auto_cleanup_reserved
+    # lower ttl to force auto cleanup
+    prev_ttl = force_constant FiberConnectionPool, :RESERVED_TTL_SECS, 0
 
-#    # create pool, run fibers and gather info
-#    pool, info = run_reserved_backups
+    # create pool, run fibers and gather info
+    pool, info = run_reserved
 
-#    # nothing left, because failing fiber was not the last to run
-#    # the following fiber made the cleanup
-#    assert_equal(0, pool.reserved_backup.count)
+    # nothing left, because failing fiber was not the last to run
+    # the following fiber made the cleanup
+    assert_equal(0, pool.instance_variable_get(:@reserved).count)
 
-#    # assert we did not replace it
-#    assert pool.has_connection?(info[:failing_connections].first)
-#  ensure
-#    # restore
-#    force_constant FiberConnectionPool, :RESERVED_BACKUP_TTL_SECS, prev_ttl
-#  end
+    # assert we did not replace it
+    assert info[:failing_connections].all?{ |c| pool.has_connection?(c) }
+  ensure
+    # restore
+    force_constant FiberConnectionPool, :RESERVED_TTL_SECS, prev_ttl
+  end
 
   def test_save_data
     # create pool, run fibers and gather info
@@ -203,8 +202,8 @@ class TestFiberConnectionPool < Minitest::Test
 
   private
 
-  def run_reserved_backups
-    info = { :instances => [].to_set }
+  def run_reserved
+    info = { :instances => [].to_set, :failing_connections => [].to_set }
 
     # get pool and fibers
     pool = FiberConnectionPool.new(:size => 2) { ::EMSynchronyConnection.new(:delay => 0.05) }
@@ -214,14 +213,14 @@ class TestFiberConnectionPool < Minitest::Test
     # state which exceptions should be treated
     pool.treated_exceptions = [ FakeException ]
 
-    # we do not repair it, backup associated with this Fiber stays in the pool
+    # we do not repair it, stays reserved
     failing_fiber = Fiber.new { pool.fail(info) rescue nil }
 
     # put it among others, not the first or the last
     # so we see it does not mistake the failing connection
     fibers.insert 2,failing_fiber
 
-    # we do not repair it, but we did not mean to, so no backup for this Fiber
+    # we do not repair it, but we did not mean to, it's released again
     failing_fiber_not_treated = Fiber.new { pool.fail_not_treated(info) rescue nil }
 
     # put it among others, not the first or the last
@@ -230,7 +229,7 @@ class TestFiberConnectionPool < Minitest::Test
 
     run_em_reactor fibers
 
-    # we should have visited only 2 instances (no instance added by repairing broken one)
+    # we should have visited only 2 instances (nothing was repaired this time)
     assert_equal 2, info[:instances].count
 
     [ pool, info ]
