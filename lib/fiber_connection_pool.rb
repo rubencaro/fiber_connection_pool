@@ -2,7 +2,7 @@ require 'fiber'
 require_relative 'fiber_connection_pool/exceptions'
 
 class FiberConnectionPool
-  VERSION = '0.2.1'
+  VERSION = '0.2.2'
 
   RESERVED_TTL_SECS = 30 # reserved cleanup trigger
   SAVED_DATA_TTL_SECS = 30 # saved_data cleanup trigger
@@ -194,6 +194,7 @@ class FiberConnectionPool
   # If no connection is available, yield the given fiber on the pending array
   #
   def acquire(fiber)
+    return @reserved[fiber] if @reserved[fiber] # already reserved? then use it
     if conn = @available.pop
       @reserved[fiber] = conn
       conn
