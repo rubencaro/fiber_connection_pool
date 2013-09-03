@@ -111,17 +111,28 @@ You have to be aware that the connection instance will remain in the pool, and o
 will surely use it. If the Exception you rescued indicates that the connection should be
 recreated or treated somehow, there's a way to access that particular connection:
 
+```  ruby
+pool = FiberConnectionPool.new(:size => 5){ MyFancyConnection.new }
+
+# state which exceptions will need treatment
+pool.treated_exceptions = [ BadQueryMadeMeWorse ]
+```
+
 ``` ruby
 begin
 
   pool.bad_query('will make me worse')
 
-rescue BadQueryMadeMeWorse
+rescue BadQueryMadeMeWorse  # rescue and treat only classes on 'treated_exceptions'
 
   pool.with_failed_connection do |connection|
     puts "Replacing #{connection.inspect} with a new one!"
     MyFancyConnection.new
   end
+  
+rescue Exception => ex  # do not treat the rest of exceptions
+
+  log ex.to_s  # -> 'You have a typo on your sql...'
 
 end
 ```
@@ -130,12 +141,16 @@ The pool saves the connection when it raises an exception on a fiber, and with `
 you execute a block of code over it. It must return a connection instance, and it will be put inside the pool
 in place of the failed one. It can be the same instance after being fixed, or maybe a new one.
 The call to `with_failed_connection` must be made from the very same
-fiber that raised the exception.
+fiber that raised the exception. The failed connection will be kept out of the pool,
+and reserved for treatment, only if the exception is one of the given in `treated_exceptions`. 
+Otherwise `with_failed_connection` will raise `NoReservedConnection`. 
 
 Also the reference to the failed connection will be lost after any method execution from that
-fiber. So you must call `with_failed_connection` before any other method that may acquire a new instance from the pool.
+fiber. So you must call `with_failed_connection` before any other method that may acquire a new 
+instance from the pool.
 
-Any reference to a failed connection is released when the fiber is dead, but as you must access it from the fiber itself, worry should not.
+Any reference to a failed connection is released when the fiber is dead, but as you must access 
+it from the fiber itself, worry should not.
 
 Save data
 -------------------
