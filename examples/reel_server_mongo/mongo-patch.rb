@@ -1,52 +1,30 @@
 require 'fiber'
+require 'celluloid'
 
 class MongoTimeoutHandler
   def self.timeout(op_timeout, ex_class, &block)
     f = Fiber.current
-    timer = after(op_timeout) { f.resume(nil) }
+    timer = Celluloid::Actor.current.after(op_timeout) { f.resume(nil) }
     res = block.call
     timer.cancel
     res
   end
 end
 
-class Mongo::Connection
-  Mutex = ::EventMachine::Synchrony::Thread::Mutex
-end
-
 class Mongo::MongoClient
-  ConditionVariable = ::EventMachine::Synchrony::Thread::ConditionVariable
-  Timeout = ::EventMachine::Synchrony::MongoTimeoutHandler
-end
-
-class Mongo::Pool
-  ConditionVariable = ::EventMachine::Synchrony::Thread::ConditionVariable
-  Mutex = ::EventMachine::Synchrony::Thread::Mutex
+  Timeout = MongoTimeoutHandler
 end
 
 class Mongo::Node
-  Mutex = ::EventMachine::Synchrony::Thread::Mutex
-  Timeout = ::EventMachine::Synchrony::MongoTimeoutHandler
+  Timeout = MongoTimeoutHandler
 end
 
 class Mongo::TCPSocket
-  Timeout = ::EventMachine::Synchrony::MongoTimeoutHandler
+  Timeout = MongoTimeoutHandler
 end
 
 class Mongo::SSLSocket
-  Timeout = ::EventMachine::Synchrony::MongoTimeoutHandler
-end
-
-class Mongo::MongoReplicaSetClient
-  Mutex = ::EventMachine::Synchrony::Thread::Mutex
-end
-
-class Mongo::MongoShardedClient
-  Mutex = ::EventMachine::Synchrony::Thread::Mutex
-end
-
-class Mongo::PoolManager
-  Mutex = ::EventMachine::Synchrony::Thread::Mutex
+  Timeout = MongoTimeoutHandler
 end
 
 class Mongo::TCPSocket
@@ -65,8 +43,8 @@ class Mongo::TCPSocket
   end
 
   def connect
-    ::EventMachine::Synchrony::MongoTimeoutHandler.timeout(@connect_timeout, Mongo::ConnectionTimeoutError) do
-      @socket = EM::Synchrony::TCPSocket.new(@address, @port)
+    MongoTimeoutHandler.timeout(@connect_timeout, Mongo::ConnectionTimeoutError) do
+      @socket = Celluloid::IO::TCPSocket.new(@address, @port)
     end
   end
 
@@ -77,7 +55,7 @@ class Mongo::TCPSocket
 
   def read(maxlen, buffer)
     raise SocketError, 'Not connected yet' if not @socket
-    ::EventMachine::Synchrony::MongoTimeoutHandler.timeout(@op_timeout, Mongo::OperationTimeout) do
+    MongoTimeoutHandler.timeout(@op_timeout, Mongo::OperationTimeout) do
       @socket.read(maxlen, buffer)
     end
   end
