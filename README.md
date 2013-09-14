@@ -99,6 +99,8 @@ We use it extensively with MySQL connections with Goliath servers by using `Mysq
 from [em-synchrony](https://github.com/igrigorik/em-synchrony).
 And for Celluloid by using a patched version of [ruby-mysql](https://github.com/rubencaro/ruby-mysql).
 By >=0.2 there is no MySQL-specific code, so it can be used with any kind of connection that can be fibered.
+Take a look at the `examples` folder to see it can be used seamlessly with MySQL and MongoDB. 
+You could do it the same way with CouchDB, etc. , or anything you would put on a pool inside a fiber reactor.
 
 Reacting to connection failure
 ------------------
