@@ -1,0 +1,10 @@
+require 'fiber_connection_pool'
+require 'mongo'
+require 'em-synchrony'
+#require 'em-synchrony/mongo'
+
+require './mongo-em-patch.rb'
+
+config['db'] = FiberConnectionPool.new(:size => 5) do
+                 Mongo::Connection.new.db('bogusdb')
+               end

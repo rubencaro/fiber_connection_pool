@@ -1,0 +1,6 @@
+source 'https://rubygems.org'
+gem 'goliath'
+gem 'em-synchrony'
+gem 'em-mongo'
+gem 'bson_ext'
+gem 'fiber_connection_pool'
