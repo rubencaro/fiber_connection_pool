@@ -1,8 +1,0 @@
-source 'https://rubygems.org'
-
-gem 'celluloid', github: 'celluloid/celluloid', branch: 'master'
-gem 'celluloid-io', github: 'celluloid/celluloid-io', branch: 'master'
-gem 'reel', github: 'celluloid/reel', branch: 'master'
-gem 'mongo'
-gem 'fiber_connection_pool'
-gem 'em-synchrony'
