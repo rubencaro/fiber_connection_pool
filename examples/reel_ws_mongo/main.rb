@@ -60,6 +60,7 @@ class MyServer < Reel::Server
 
   def on_connection(connection)
     while request = connection.request
+      connection.detach # we give it to another actor
       @dispatcher.dispatch(request)
     end
   end
