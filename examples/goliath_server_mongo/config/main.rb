@@ -1,7 +1,6 @@
 require 'fiber_connection_pool'
 require 'mongo'
 require 'em-synchrony'
-#require 'em-synchrony/mongo'
 
 require './mongo-em-patch.rb'
 
