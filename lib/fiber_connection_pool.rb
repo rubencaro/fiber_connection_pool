@@ -2,7 +2,7 @@ require 'fiber'
 require_relative 'fiber_connection_pool/exceptions'
 
 class FiberConnectionPool
-  VERSION = '0.2.2'
+  VERSION = '0.2.3'
 
   RESERVED_TTL_SECS = 30 # reserved cleanup trigger
   SAVED_DATA_TTL_SECS = 30 # saved_data cleanup trigger
@@ -127,7 +127,7 @@ class FiberConnectionPool
     new_conn = yield bad_conn
     @available.reject!{ |v| v == bad_conn }
     @reserved.reject!{ |k,v| v == bad_conn }
-    @available.push new_conn
+    @available.unshift new_conn
     # try to cleanup
     begin
       bad_conn.close
@@ -210,7 +210,7 @@ class FiberConnectionPool
   # Also perform cleanup if TTL is past
   #
   def release(fiber)
-    @available.push @reserved.delete(fiber)
+    @available.unshift @reserved.delete(fiber)
 
     # try cleanup
     reserved_cleanup if (Time.now - @last_reserved_cleanup) >= RESERVED_TTL_SECS

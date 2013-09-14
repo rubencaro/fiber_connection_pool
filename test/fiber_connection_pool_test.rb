@@ -25,7 +25,7 @@ class TestFiberConnectionPool < Minitest::Test
     # we should have visited 1 thread, 15 fibers and 1 instances
     assert_equal 1, info[:threads].count
     assert_equal 15, info[:fibers].count
-    assert_equal 1, info[:instances].count
+    assert_equal 5, info[:instances].count
   end
 
   def test_em_synchrony_behaviour
