@@ -18,10 +18,16 @@ class Dispatcher
   end
 
   def dispatch(request)
+    wamp_dispatch(request.websocket) if request.websocket?
     print '.'
     res = @pool.collection('bogus').find( :$where => "sleep(2000)" ).count
     puts "Done #{Thread.current.to_s}, #{Fiber.current.to_s} res:#{res.inspect}"
     request.respond :ok, "hello, world! #{Time.now.strftime('%T')}"
+  end
+
+  # server side WAMP (http://wamp.ws/spec)
+  def wamp_dispatch(socket)
+
   end
 end
 
