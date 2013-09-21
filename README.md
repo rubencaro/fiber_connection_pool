@@ -99,7 +99,7 @@ We use it extensively with MySQL connections with Goliath servers by using `Mysq
 from [em-synchrony](https://github.com/igrigorik/em-synchrony).
 And for Celluloid by using a patched version of [ruby-mysql](https://github.com/rubencaro/ruby-mysql).
 By >=0.2 there is no MySQL-specific code, so it can be used with any kind of connection that can be fibered.
-Take a look at the `examples` folder to see it can be used seamlessly with MySQL and MongoDB. 
+Take a look at the `examples` folder to see it can be used seamlessly with MySQL and MongoDB.
 You could do it the same way with CouchDB, etc. , or anything you would put on a pool inside a fiber reactor.
 
 Reacting to connection failure
@@ -131,7 +131,7 @@ rescue BadQueryMadeMeWorse  # rescue and treat only classes on 'treated_exceptio
     puts "Replacing #{connection.inspect} with a new one!"
     MyFancyConnection.new
   end
-  
+
 rescue Exception => ex  # do not treat the rest of exceptions
 
   log ex.to_s  # -> 'You have a typo on your sql...'
@@ -144,14 +144,14 @@ you execute a block of code over it. It must return a connection instance, and i
 in place of the failed one. It can be the same instance after being fixed, or maybe a new one.
 The call to `with_failed_connection` must be made from the very same
 fiber that raised the exception. The failed connection will be kept out of the pool,
-and reserved for treatment, only if the exception is one of the given in `treated_exceptions`. 
-Otherwise `with_failed_connection` will raise `NoReservedConnection`. 
+and reserved for treatment, only if the exception is one of the given in `treated_exceptions`.
+Otherwise `with_failed_connection` will raise `NoReservedConnection`.
 
 Also the reference to the failed connection will be lost after any method execution from that
-fiber. So you must call `with_failed_connection` before any other method that may acquire a new 
+fiber. So you must call `with_failed_connection` before any other method that may acquire a new
 instance from the pool.
 
-Any reference to a failed connection is released when the fiber is dead, but as you must access 
+Any reference to a failed connection is released when the fiber is dead, but as you must access
 it from the fiber itself, worry should not.
 
 Save data
@@ -206,7 +206,8 @@ Supported Platforms
 -------------------
 
 Used in production environments on Ruby 1.9.3 and 2.0.0.
-Tested against Ruby 1.9.3, 2.0.0, and rbx-19mode ([See details..](http://travis-ci.org/rubencaro/fiber_connection_pool)).
+Tested against Ruby 1.9.3 and 2.0.0 ([See details..](http://travis-ci.org/rubencaro/fiber_connection_pool)).
+It should work on any platform implementing fibers. There's no further magic involved.
 
 More to come !
 -------------------

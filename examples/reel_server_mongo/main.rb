@@ -26,41 +26,17 @@ class Dispatcher
 end
 
 
-class DispatcherPool
-
-  def initialize(opts = {})
-    @size = opts[:size] || 1
-    @dispatchers = []
-    @size.times{ |i| @dispatchers << "dispatcher_#{i}".to_sym }
-    @dispatchers.each{ |d| Dispatcher.supervise_as d }
-    @next_dispatcher = 0
-    puts "Pool of #{@size} dispatchers ready."
-  end
-
-  def dispatch(request)
-    d = @next_dispatcher
-    @next_dispatcher += 1
-    @next_dispatcher = 0 if @next_dispatcher >= @dispatchers.count
-    Celluloid::Actor[@dispatchers[d]].dispatch(request)
-  rescue => ex
-    puts "Someone died: #{ex}"
-    request.respond :internal_server_error, "Someone died"
-  end
-
-end
-
-
 class MyServer < Reel::Server
 
   def initialize(host = "127.0.0.1", port = 3000)
     super(host, port, &method(:on_connection))
-    @dispatcher = DispatcherPool.new
+    Dispatcher.supervise_as :dispatcher
     puts "Listening on #{host}:#{port}..."
   end
 
   def on_connection(connection)
     while request = connection.request
-      @dispatcher.dispatch(request)
+      Celluloid::Actor[:dispatcher].dispatch(request)
     end
   end
 
