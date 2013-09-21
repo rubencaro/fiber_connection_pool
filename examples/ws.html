@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script>
+      var ws;
+      function debug(string) {
+        var element = document.getElementById("debug");
+        var p = document.createElement("p");
+        p.appendChild(document.createTextNode(string));
+        element.appendChild(p);
+      };
+      function close_connection(){
+        ws.close();
+        debug("closed");
+      };
+      function open_connection(){
+        ws = new WebSocket("ws://localhost:3000");
+        ws.onmessage = function(evt) { debug("Received: " + evt.data); };
+        ws.onclose = function(event) {
+          debug("Closed - code: " + event.code + ", reason: " + event.reason + ", wasClean: " + event.wasClean);
+        };
+        ws.onopen = function() {
+          debug("connected...");
+        };
+      };
+      function send_msg(){
+        ws.send('hello server');
+        debug("message sent...");
+      };
+    </script>
+  </head>
+  <body>
+    <button onclick="open_connection();">Open</button>
+    <button onclick="close_connection();">Close</button>
+    <button onclick="send_msg();">Send Msg</button>
+    <div id="debug"></div>
+  </body>
+</html>
