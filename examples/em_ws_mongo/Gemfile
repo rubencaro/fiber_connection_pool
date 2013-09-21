@@ -1,5 +1,6 @@
 source 'https://rubygems.org'
-gem 'goliath'
+gem 'websocket-eventmachine-server'
 gem 'em-synchrony'
 gem 'mongo'
 gem 'fiber_connection_pool'
+gem 'mongo-em-patch', :github => 'rubencaro/mongo-em-patch'
