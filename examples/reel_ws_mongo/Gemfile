@@ -5,3 +5,7 @@ gem 'celluloid-io', github: 'celluloid/celluloid-io', branch: 'master'
 gem 'reel', github: 'celluloid/reel', branch: 'master'
 gem 'mongo'
 gem 'fiber_connection_pool'
+
+group :development do
+  gem 'pry'
+end

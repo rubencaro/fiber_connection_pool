@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <meta charset="utf-8">
     <script>
       var ws;
       function debug(string) {
@@ -11,6 +12,7 @@
       };
       function close_connection(){
         ws.close();
+        debug("closed");
       };
       function open_connection(){
         ws = new WebSocket("ws://localhost:3000");
@@ -20,14 +22,18 @@
         };
         ws.onopen = function() {
           debug("connected...");
-          ws.send("hello server");
         };
+      };
+      function send_msg(){
+        ws.send('hello server');
+        debug("message sent...");
       };
     </script>
   </head>
-  <body onload="init();">
-    <input type="button" onclick="open_connection();">Open</input>
-    <input type="button" onclick="close_connection();">Close</input>
+  <body>
+    <button onclick="open_connection();">Open</button>
+    <button onclick="close_connection();">Close</button>
+    <button onclick="send_msg();">Send Msg</button>
     <div id="debug"></div>
   </body>
 </html>
