@@ -2,7 +2,7 @@ require 'fiber'
 require_relative 'fiber_connection_pool/exceptions'
 
 class FiberConnectionPool
-  VERSION = '0.2.3'
+  VERSION = '0.2.4'
 
   RESERVED_TTL_SECS = 30 # reserved cleanup trigger
   SAVED_DATA_TTL_SECS = 30 # saved_data cleanup trigger
@@ -99,9 +99,9 @@ class FiberConnectionPool
 
   # Avoid method_missing stack for 'query'
   #
-  def query(sql)
+  def query(sql, *args)
     execute('query') do |conn|
-      conn.query sql
+      conn.query sql, *args
     end
   end
 
