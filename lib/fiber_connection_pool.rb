@@ -44,7 +44,7 @@ class FiberConnectionPool
   # call to -any- method on the connection.
   # The connection and the method name are passed to the block.
   #
-  # The returned value will be saved in pool.saved_data[Fiber.current][key],
+  # The returned value will be saved in pool.gathered_data[key],
   # and will be kept as long as the fiber stays alive.
   #
   # Ex:
@@ -56,14 +56,9 @@ class FiberConnectionPool
   #   end
   #
   #   # (...from a reactor fiber...)
-  #   myfiber = Fiber.current
   #   pool.query('select anything from anywhere')
-  #   puts pool.saved_data[myfiber][:hey_or_hoo]
+  #   puts pool.gathered_data[:hey_or_hoo]
   #     => 'hey'
-  #
-  #   # (...eventually fiber dies...)
-  #   puts pool.saved_data[myfiber].inspect
-  #     => nil
   #
   def save_data(key, &block)
     @save_data_requests[key] = block
