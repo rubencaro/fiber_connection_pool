@@ -169,7 +169,7 @@ pool = FiberConnectionPool.new(:size => 5){ MyFancyConnection.new }
 # add a request to save data for each successful call on a connection
 # will save the return value inside a hash on the key ':affected_rows'
 # and make it available for the fiber that made the call
-pool.save_data(:affected_rows) do |connection|
+pool.save_data(:affected_rows) do |connection, method, args|
   connection.affected_rows
 end
 ```
@@ -191,7 +191,7 @@ right after you made the query that generated it. But you could:
 
 ``` ruby
 # save only the first run
-pool.save_data(:affected_rows) do |connection|
+pool.save_data(:affected_rows) do |connection, method, args|
   pool.gathered_data[:affected_rows] || connection.affected_rows
 end
 ```

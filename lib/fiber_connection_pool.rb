@@ -2,7 +2,7 @@ require 'fiber'
 require_relative 'fiber_connection_pool/exceptions'
 
 class FiberConnectionPool
-  VERSION = '0.2.4'
+  VERSION = '0.2.5'
 
   RESERVED_TTL_SECS = 30 # reserved cleanup trigger
   SAVED_DATA_TTL_SECS = 30 # saved_data cleanup trigger
@@ -50,7 +50,7 @@ class FiberConnectionPool
   # Ex:
   #
   #   # (...right after pool's creation...)
-  #   pool.save_data(:hey_or_hoo) do |conn, method|
+  #   pool.save_data(:hey_or_hoo) do |conn, method, args|
   #     return 'hey' if method == 'query'
   #     'hoo'
   #   end
@@ -95,7 +95,7 @@ class FiberConnectionPool
   # Avoid method_missing stack for 'query'
   #
   def query(sql, *args)
-    execute('query') do |conn|
+    execute('query', args) do |conn|
       conn.query sql, *args
     end
   end
@@ -147,7 +147,7 @@ class FiberConnectionPool
   #
   # After running the block, save requested data and release the connection.
   #
-  def execute(method)
+  def execute(method, args)
     f = Fiber.current
     begin
       # get a connection and use it
@@ -155,7 +155,7 @@ class FiberConnectionPool
       retval = yield conn
 
       # save anything requested
-      process_save_data(f, conn, method)
+      process_save_data(f, conn, method, args)
 
       # successful run, release
       release(f)
@@ -176,10 +176,10 @@ class FiberConnectionPool
   # and save the data for the given fiber.
   # Also perform cleanup if TTL is past
   #
-  def process_save_data(fiber, conn, method)
+  def process_save_data(fiber, conn, method, args)
     @save_data_requests.each do |key,block|
       @saved_data[fiber] ||= {}
-      @saved_data[fiber][key] = block.call(conn, method)
+      @saved_data[fiber][key] = block.call(conn, method, args)
     end
     # try cleanup
     save_data_cleanup if (Time.now - @last_data_cleanup) >= SAVED_DATA_TTL_SECS
@@ -222,7 +222,7 @@ class FiberConnectionPool
   # waiting for IO, allowing the reactor run other fibers)
   #
   def method_missing(method, *args, &blk)
-    execute(method) do |conn|
+    execute(method, args) do |conn|
       conn.send(method, *args, &blk)
     end
   end
