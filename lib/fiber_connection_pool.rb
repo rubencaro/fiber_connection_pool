@@ -122,12 +122,20 @@ class FiberConnectionPool
   # Raises NoReservedConnection if cannot find the failed connection instance.
   #
   def with_failed_connection
-    bad_conn = @reserved[Fiber.current]
+    fiber = Fiber.current
+    bad_conn = @reserved[fiber]
     raise NoReservedConnection.new if bad_conn.nil?
     new_conn = yield bad_conn
     @available.reject!{ |v| v == bad_conn }
     @reserved.reject!{ |k,v| v == bad_conn }
-    @available.unshift new_conn
+
+    # we should keep it if manually acquired,
+    # just in case it is still useful
+    if @keep_connection[fiber] then
+      @reserved[fiber] = new_conn
+    else
+      @available.unshift new_conn # or else release into the pool
+    end
   end
 
   # Delete any reserved held for dead fibers
