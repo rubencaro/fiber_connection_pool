@@ -2,13 +2,13 @@ require 'fiber'
 require_relative 'fiber_connection_pool/exceptions'
 
 class FiberConnectionPool
-  VERSION = '0.3.0'
+  VERSION = '0.3.1'
 
   RESERVED_TTL_SECS = 30 # reserved cleanup trigger
   SAVED_DATA_TTL_SECS = 30 # saved_data cleanup trigger
 
   attr_accessor :saved_data, :treated_exceptions
-  
+
   attr_reader :size
 
   # Initializes the pool with 'size' instances
@@ -18,7 +18,7 @@ class FiberConnectionPool
   #
   def initialize(opts)
     raise ArgumentError.new('size > 0 is mandatory') if opts[:size].to_i <= 0
-    
+
     @size = opts[:size].to_i
 
     @saved_data = {} # placeholder for requested save data
@@ -128,11 +128,6 @@ class FiberConnectionPool
     @available.reject!{ |v| v == bad_conn }
     @reserved.reject!{ |k,v| v == bad_conn }
     @available.unshift new_conn
-    # try to cleanup
-    begin
-      bad_conn.close
-    rescue
-    end
   end
 
   # Delete any reserved held for dead fibers
@@ -179,7 +174,7 @@ class FiberConnectionPool
   def release(fiber = nil)
     fiber = Fiber.current if fiber.nil?
     @keep_connection.delete fiber
-    
+
     @available.unshift @reserved.delete(fiber)
 
     # try cleanup
