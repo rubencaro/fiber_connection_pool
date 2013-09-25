@@ -34,16 +34,6 @@ class FiberConnectionPool
     @available = Array.new(@size) { yield }
   end
 
-  # DEPRECATED: use save_data
-  def save_data_for_fiber
-    nil
-  end
-
-  # DEPRECATED: use release_data
-  def stop_saving_data_for_fiber
-    @saved_data.delete Fiber.current
-  end
-
   # Add a save_data request to the pool.
   # The given block will be executed after each successful
   # call to -any- method on the connection.
@@ -157,8 +147,19 @@ class FiberConnectionPool
   #
   # Ex:
   #
-  #   ...
+  #    def transaction
+  #      @pool.acquire          # reserve one instance for this fiber
+  #      @pool.query 'BEGIN'    # start SQL transaction
   #
+  #      yield                  # perform queries inside the transaction
+  #
+  #      @pool.query 'COMMIT'   # confirm it
+  #    rescue => ex
+  #      @pool.query 'ROLLBACK' # discard it
+  #      raise ex
+  #    ensure
+  #      @pool.release          # always release it back
+  #    end
   #
   #
   def acquire(fiber = nil, opts = { :keep => true })
