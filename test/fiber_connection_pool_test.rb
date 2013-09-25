@@ -164,6 +164,86 @@ class TestFiberConnectionPool < Minitest::Test
     # restore
     force_constant FiberConnectionPool, :RESERVED_TTL_SECS, prev_ttl
   end
+  
+  
+  def test_working_manual_reserve
+    info = { :instances => [].to_set, :failing_connections => [].to_set }
+    
+    # get pool and fibers
+    pool = FiberConnectionPool.new(:size => 4) { ::EMSynchronyConnection.new(:delay => 0.05) }
+
+    fibers = []
+    fibers << Fiber.new do 
+      begin
+        pool.acquire
+        pool.size.times{ pool.do_something(info) }
+      ensure
+        pool.release
+      end
+    end
+    
+    fibers <<  Fiber.new do 
+      n = 0
+      begin
+        pool.acquire
+        pool.fail(info)
+      rescue
+        n += 1
+        retry if n < pool.size
+      ensure
+        pool.release
+      end
+    end
+
+    run_em_reactor fibers
+    
+    # we should have used only two instances
+    assert_equal 2, info[:instances].count
+    
+    # only one failing connection
+    assert_equal 1, info[:failing_connections].count
+    
+    # nothing left, because we made manual release
+    assert_equal(0, pool.instance_variable_get(:@reserved).count)
+    assert_equal(0, pool.instance_variable_get(:@keep_connection).count)
+  end
+  
+  def test_manual_reserve_cleanup
+    # lower ttl to force auto cleanup
+    prev_ttl = force_constant FiberConnectionPool, :RESERVED_TTL_SECS, 0
+    
+    info = { :instances => [].to_set, :failing_connections => [].to_set }
+    
+    # get pool and fibers
+    pool = FiberConnectionPool.new(:size => 4) { ::EMSynchronyConnection.new(:delay => 0.05) }
+
+    fibers = []
+    fibers << Fiber.new do 
+      begin
+        pool.acquire
+        pool.size.times{ pool.do_something(info) } # not releasing!
+      end
+    end
+
+    run_em_reactor fibers
+    
+    # we should have used only one instance
+    assert_equal 1, info[:instances].count
+    # still kept, until cleanup is fired
+    assert_equal(1, pool.instance_variable_get(:@reserved).count)
+    assert_equal(1, pool.instance_variable_get(:@keep_connection).count)
+    
+    # will fire cleanup (RESERVED_TTL_SECS = 0)
+    pool.release
+    
+    # nothing left
+    assert_equal(0, pool.instance_variable_get(:@reserved).count)
+    assert_equal(0, pool.instance_variable_get(:@keep_connection).count)
+    
+  ensure
+    # restore
+    force_constant FiberConnectionPool, :RESERVED_TTL_SECS, prev_ttl
+  end
 
   def test_save_data
     # create pool, run fibers and gather info
@@ -198,6 +278,22 @@ class TestFiberConnectionPool < Minitest::Test
   ensure
     # restore
     force_constant FiberConnectionPool, :SAVED_DATA_TTL_SECS, prev_ttl
+  end
+  
+  def test_round_robin
+    info = { :instances => [].to_set }
+    
+    # get pool and fibers
+    pool = FiberConnectionPool.new(:size => 4) { ::EMSynchronyConnection.new(:delay => 0.05) }
+    
+    fiber = Fiber.new do 
+      pool.size.times{ pool.do_something(info) }
+    end
+
+    run_em_reactor [ fiber ]
+    
+    # we should have passed through every instance
+    assert_equal pool.size, info[:instances].count
   end
 
   private

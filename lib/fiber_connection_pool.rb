@@ -2,12 +2,14 @@ require 'fiber'
 require_relative 'fiber_connection_pool/exceptions'
 
 class FiberConnectionPool
-  VERSION = '0.2.5'
+  VERSION = '0.3.0'
 
   RESERVED_TTL_SECS = 30 # reserved cleanup trigger
   SAVED_DATA_TTL_SECS = 30 # saved_data cleanup trigger
 
   attr_accessor :saved_data, :treated_exceptions
+  
+  attr_reader :size
 
   # Initializes the pool with 'size' instances
   # running the given block to get each one. Ex:
@@ -16,6 +18,8 @@ class FiberConnectionPool
   #
   def initialize(opts)
     raise ArgumentError.new('size > 0 is mandatory') if opts[:size].to_i <= 0
+    
+    @size = opts[:size].to_i
 
     @saved_data = {} # placeholder for requested save data
     @reserved  = {}   # map of in-progress connections
@@ -25,8 +29,9 @@ class FiberConnectionPool
     @pending   = []   # pending reservations (FIFO)
     @save_data_requests = {} # blocks to be yielded to save data
     @last_data_cleanup = Time.now # saved_data cleanup trigger
+    @keep_connection = {} # keep reserved connections for fiber
 
-    @available = Array.new(opts[:size].to_i) { yield }
+    @available = Array.new(@size) { yield }
   end
 
   # DEPRECATED: use save_data
@@ -137,6 +142,52 @@ class FiberConnectionPool
     @reserved.dup.each do |k,v|
       release(k) if not k.alive?
     end
+    @keep_connection.dup.each do |k,v|
+      @keep_connection.delete(k) if not k.alive?
+    end
+  end
+
+  # Acquire a lock on a connection and assign it to given fiber
+  # If no connection is available, yield the given fiber on the pending array
+  #
+  # If :keep => true is given (by default), connection is kept, you must call 'release' at some point
+  #
+  # Ex:
+  #
+  #   ...
+  #
+  #
+  #
+  def acquire(fiber = nil, opts = { :keep => true })
+    fiber = Fiber.current if fiber.nil?
+    @keep_connection[fiber] = true if opts[:keep]
+    return @reserved[fiber] if @reserved[fiber] # already reserved? then use it
+    if conn = @available.pop
+      @reserved[fiber] = conn
+      conn
+    else
+      Fiber.yield @pending.push fiber
+      acquire(fiber,opts)
+    end
+  end
+
+  # Release connection assigned to the supplied fiber and
+  # resume any other pending connections (which will
+  # immediately try to run acquire on the pool)
+  # Also perform cleanup if TTL is past
+  #
+  def release(fiber = nil)
+    fiber = Fiber.current if fiber.nil?
+    @keep_connection.delete fiber
+    
+    @available.unshift @reserved.delete(fiber)
+
+    # try cleanup
+    reserved_cleanup if (Time.now - @last_reserved_cleanup) >= RESERVED_TTL_SECS
+
+    if pending = @pending.shift
+      pending.resume
+    end
   end
 
   private
@@ -151,14 +202,14 @@ class FiberConnectionPool
     f = Fiber.current
     begin
       # get a connection and use it
-      conn = acquire(f)
+      conn = acquire(f, :keep => false)
       retval = yield conn
 
       # save anything requested
       process_save_data(f, conn, method, args)
 
-      # successful run, release
-      release(f)
+      # successful run, release if not keeping
+      release(f) if not @keep_connection[f]
 
       retval
     rescue *treated_exceptions => ex
@@ -166,8 +217,8 @@ class FiberConnectionPool
       # maybe prepare something here to be used on connection repair
       raise ex
     rescue Exception => ex
-      # not successful run, but not meant to be treated
-      release(f)
+      # not successful run, but not meant to be treated, release if not keeping
+      release(f) if not @keep_connection[f]
       raise ex
     end
   end
@@ -183,36 +234,6 @@ class FiberConnectionPool
     end
     # try cleanup
     save_data_cleanup if (Time.now - @last_data_cleanup) >= SAVED_DATA_TTL_SECS
-  end
-
-  # Acquire a lock on a connection and assign it to given fiber
-  # If no connection is available, yield the given fiber on the pending array
-  #
-  def acquire(fiber)
-    return @reserved[fiber] if @reserved[fiber] # already reserved? then use it
-    if conn = @available.pop
-      @reserved[fiber] = conn
-      conn
-    else
-      Fiber.yield @pending.push fiber
-      acquire(fiber)
-    end
-  end
-
-  # Release connection assigned to the supplied fiber and
-  # resume any other pending connections (which will
-  # immediately try to run acquire on the pool)
-  # Also perform cleanup if TTL is past
-  #
-  def release(fiber)
-    @available.unshift @reserved.delete(fiber)
-
-    # try cleanup
-    reserved_cleanup if (Time.now - @last_reserved_cleanup) >= RESERVED_TTL_SECS
-
-    if pending = @pending.shift
-      pending.resume
-    end
   end
 
   # Allow the pool to behave as the underlying connection
