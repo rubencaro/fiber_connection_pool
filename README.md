@@ -157,10 +157,14 @@ it from the fiber itself, worry should not.
 Save data
 -------------------
 
-Sometimes we need to get something more than de return value from the `query_me` call, but that _something_ is related to _that_ call on _that_ connection.
-For example, maybe you need to call `affected_rows` right after the query was made on that particular connection.
-If you make that extra calls on the `pool` object, it will acquire a new connection from the pool an run on it. So it's useless.
-There is a way to gather all that data from the connection so we can work on it, but also release the connection for other fiber to use it.
+Sometimes we need to get something more than de return value from the `query_me` call, 
+but that _something_ is related to _that_ call on _that_ connection.
+For example, maybe you need to call `affected_rows` right after the query was 
+made on that particular connection.
+If you make that extra calls on the `pool` object, it will acquire a new connection 
+from the pool an run on it. So it's useless.
+There is a way to gather all that data from the connection so we can work on it, 
+but also release the connection for other fiber to use it.
 
 ``` ruby
 # define the pool
@@ -186,7 +190,8 @@ puts pool.gathered_data
 
 You must access the gathered data from the same fiber that triggered its gathering.
 Also any new call to `query_me` or any other method from the connection would execute the block again,
-overwriting that position on the hash (unless you code to prevent it, of course). Usually you would use the gathered data
+overwriting that position on the hash (unless you code to prevent it, of course). 
+Usually you would use the gathered data
 right after you made the query that generated it. But you could:
 
 ``` ruby
@@ -196,11 +201,57 @@ pool.save_data(:affected_rows) do |connection, method, args|
 end
 ```
 
-You can define as much `save_data` blocks as you want, and run any wonder ruby lets you. But great power comes with great responsability.
+You can define as much `save_data` blocks as you want, and run any wonder ruby lets you. 
+But great power comes with great responsability.
 You must consider that any requests for saving data are executed for _every call_ on the pool from that fiber.
 So keep it stupid simple, and blindly fast. At least as much as you can. That would affect performance otherwise.
 
 Any gathered_data is released when the fiber is dead, but as you must access it from the fiber itself, worry should not.
+
+
+Manual acquire
+-------------------
+
+Sometimes you may need to execute a sequence of methods on the same instance. 
+Then you should use manually acquire the connection from the pool. But then you are entirely
+responsible of releasing it back again into the pool. See this example:
+
+``` ruby
+def transaction
+  @pool.acquire          # reserve one instance for this fiber
+  @pool.query 'BEGIN'    # start SQL transaction
+  
+  yield                  # perform queries inside the transaction
+  
+  @pool.query 'COMMIT'   # confirm it
+rescue => ex
+  @pool.query 'ROLLBACK' # discard it
+  raise ex
+ensure
+  @pool.release          # always release it back
+end
+
+transaction do
+  @pool.query 'UPDATE ...'
+  @pool.query 'SELECT ...'
+end
+```
+
+When you call `acquire`, one connection will be taken out of the pool and reserved for exclusive use
+of the current fiber. Every call you make to the pool from this fiber will be using the same connection instance, 
+until `release` is called. Then it's put back into the pool and made available for the other fibers.
+
+If for some reason `release` is not called, then the connection will remain unavailable for the other
+fibers until the death of the fiber that acquired it. Then it's returned to the pool. That's a garbage 
+collecting mechanism, not to rely on for performance. _You should definitely ensure_ you call `release`.
+
+Notice that when you use `with_failed_connection` you may lose the actual instance. 
+Remember that `with_failed_connection` replaces the failing connection with the return value of the given block.
+Only if you return the same instance you will not lose it. 
+Sometimes even that will not be enough, just look at the `transaction` example. 
+If anything raises before the `COMMIT`, it's not so easy to avoid being forced 
+to start the whole transaction all over again, whether you lost the actual instance or not.
+
 
 Supported Platforms
 -------------------
