@@ -2,7 +2,7 @@ require 'fiber'
 require_relative 'fiber_connection_pool/exceptions'
 
 class FiberConnectionPool
-  VERSION = '0.3.1'
+  VERSION = '0.3.2'
 
   RESERVED_TTL_SECS = 30 # reserved cleanup trigger
   SAVED_DATA_TTL_SECS = 30 # saved_data cleanup trigger
@@ -125,6 +125,7 @@ class FiberConnectionPool
       @reserved[fiber] = new_conn
     else
       @available.unshift new_conn # or else release into the pool
+      notify_new_is_available
     end
   end
 
@@ -189,12 +190,16 @@ class FiberConnectionPool
     # try cleanup
     reserved_cleanup if (Time.now - @last_reserved_cleanup) >= RESERVED_TTL_SECS
 
+    notify_new_is_available
+  end
+
+  private
+  
+  def notify_new_is_available
     if pending = @pending.shift
       pending.resume
     end
   end
-
-  private
 
   # Choose first available connection and pass it to the supplied
   # block. This will block (yield) indefinitely until there is an available
