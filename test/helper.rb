@@ -1,3 +1,6 @@
+require 'rubygems'
+require 'bundler/setup'
+
 require 'minitest/pride'
 require 'minitest/autorun'
 require 'em-synchrony'
