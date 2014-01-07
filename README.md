@@ -256,8 +256,8 @@ to start the whole transaction all over again, whether you lost the actual insta
 Supported Platforms
 -------------------
 
-Used in production environments on Ruby 1.9.3 and 2.0.0.
-Tested against Ruby 1.9.3 and 2.0.0 ([See details..](http://travis-ci.org/rubencaro/fiber_connection_pool)).
+Used in production environments on Ruby 1.9.3, 2.0 and 2.1.
+Tested against Ruby 1.9.3, 2.0 and 2.1 ([See details..](http://travis-ci.org/rubencaro/fiber_connection_pool)).
 It should work on any platform implementing fibers. There's no further magic involved.
 
 More to come !
